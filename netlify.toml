@@ -1,0 +1,36 @@
+# Netlify settings for portal.nelmoragroup.com
+# The website (client/) is built into client/dist; the API runs as one function (netlify/functions/api.js)
+# and keeps the database in Netlify Blobs.
+
+[build]
+  command = "npm install --prefix client && npm run build"
+  publish = "client/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # Copied as-is instead of bundled (better-sqlite3 has a compiled part built for Netlify's servers).
+  external_node_modules = ["better-sqlite3", "express"]
+
+# API calls go to the function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Every other page loads the app (Stock, Sales, ... are handled in the browser)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Local test of the Netlify setup: netlify dev
+[dev]
+  framework = "#custom"
+  command = "npm run dev --prefix client"
+  targetPort = 5173
+  port = 8888

@@ -19,6 +19,19 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
+// Replace ALL data with a backup file (.db from "Download backup").
+export async function restoreBackup(file) {
+  const res = await fetch('/api/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: file,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) window.dispatchEvent(new Event('nelmora-unauth'));
+  if (!res.ok) throw new Error(data.error || 'Restore failed');
+  return data;
+}
+
 export async function downloadBackup() {
   const res = await fetch('/api/backup', { headers: token ? { Authorization: 'Bearer ' + token } : {} });
   if (!res.ok) throw new Error('Backup failed');

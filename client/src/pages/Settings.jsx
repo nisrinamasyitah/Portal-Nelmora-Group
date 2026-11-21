@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, downloadBackup } from '../api.js';
+import { api, downloadBackup, restoreBackup } from '../api.js';
 import { Field, Loading, PageHead, useApi } from '../components.jsx';
 import { FONTS, applyFont, getFont, loadFont } from '../fonts.js';
 
@@ -30,8 +30,22 @@ export default function Settings({ onLogout }) {
   const [f, setF] = useState(null);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  const [restoreMsg, setRestoreMsg] = useState(null);
 
   useEffect(() => { if (st.data) setF(st.data); }, [st.data]);
+
+  const restore = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!window.confirm(`Replace ALL data in this portal with "${file.name}"?\n\nEverything currently here will be replaced by the backup.`)) return;
+    setRestoreMsg({ ok: true, text: 'Restoring…' });
+    try {
+      const r = await restoreBackup(file);
+      setRestoreMsg({ ok: true, text: `Restored: ${r.sales} sales and ${r.products} products. Reloading…` });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e2) { setRestoreMsg({ ok: false, text: e2.message }); }
+  };
   if (!f) return <Loading state={st} />;
 
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
@@ -82,9 +96,15 @@ export default function Settings({ onLogout }) {
 
       <div className="card" style={{ maxWidth: 640 }}>
         <h2>Backup</h2>
-        <p className="muted" style={{ marginBottom: 12 }}>All your data lives in one file (<code>data/nelmora.db</code>). Download a copy regularly and keep it somewhere safe, like Google Drive.</p>
-        <button onClick={() => downloadBackup().catch((e) => setErr(e.message))}>Download backup</button>
+        <p className="muted" style={{ marginBottom: 12 }}>All your data lives in one file (<code>nelmora.db</code>). Download a copy regularly and keep it somewhere safe, like Google Drive.</p>
+        {restoreMsg && <div className={restoreMsg.ok ? 'notice ok' : 'error'}>{restoreMsg.text}</div>}
+        <button onClick={() => downloadBackup().catch((e) => setRestoreMsg({ ok: false, text: e.message }))}>Download backup</button>
+        <label className="btn" style={{ marginLeft: 8, cursor: 'pointer' }}>
+          Restore backup…
+          <input type="file" accept=".db,application/octet-stream" style={{ display: 'none' }} onChange={restore} />
+        </label>
         {onLogout && <button style={{ marginLeft: 8 }} onClick={onLogout}>Log out</button>}
+        <p className="muted small" style={{ marginTop: 10 }}>Restore replaces <b>all</b> data in this portal with the backup file. Download a backup first if you might need the current data.</p>
       </div>
 
       <div className="card" style={{ maxWidth: 640 }}>

@@ -61,10 +61,30 @@ To wipe it and start clean: stop the server and delete the `data/` folder.
 - **Local only by default**: the server only accepts connections from your own computer.
 - **To use it from your phone or put it online**: copy `.env.example` to `.env`, set `PORTAL_PASSWORD` and `SESSION_SECRET` (and optionally `PORTAL_EMAIL` to require an email too), and set `HOST=0.0.0.0` for same-Wi-Fi access. If you host it on the internet, put it behind HTTPS (for example Render, Railway or a VPS with Caddy) and keep the `data/` folder on a persistent disk.
 
+## Online at portal.nelmoragroup.com (Netlify)
+
+The same code runs on Netlify. `netlify.toml` builds the website, and the API runs as one function
+(`netlify/functions/api.js`). Netlify doesn't keep files, so the database file is stored in **Netlify Blobs**
+(store `nelmora`). A copy of it from the start of each day is kept automatically as `backups/YYYY-MM-DD.db`.
+
+One-time setup:
+1. Push this repo to GitHub, then in Netlify: project **portalnelmoragroup** → Project configuration →
+   Build & deploy → **Link repository** → choose the repo. Build settings come from `netlify.toml`.
+2. Project configuration → **Environment variables**: add `PORTAL_PASSWORD`, `PORTAL_EMAIL` and
+   `SESSION_SECRET` (a long random text). Then **Deploys → Trigger deploy**.
+3. Open https://portal.nelmoragroup.com, log in, go to **Settings → Restore backup** and upload a backup
+   downloaded from the portal on your computer. All data (sales, stock, events, cash) moves across.
+
+After that, record everything on the online portal only, so there is one set of figures.
+Test the Netlify setup on your computer with `netlify dev` (opens http://localhost:8888).
+
 ## Project layout
 
 ```
-server/index.js      API routes + optional login
+server/app.js        API routes + optional login
+server/index.js      starts the API on your computer
+netlify/functions/   the API on Netlify (database kept in Netlify Blobs)
+netlify.toml         Netlify build settings
 server/calc.js       all the costing / cash / monthly maths (start here to check a number)
 server/db.js         database tables and defaults
 server/seed-demo.js  optional sample data

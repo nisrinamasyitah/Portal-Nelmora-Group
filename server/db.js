@@ -2,20 +2,12 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, 'nelmora.db');
+// The database is one SQLite file.
+// - On your computer (npm start / npm run dev): data/nelmora.db on disk.
+// - On Netlify: the same file is kept in Netlify Blobs; netlify/functions/api.js loads it into memory
+//   for each request and saves it back after changes (see useDatabase / serializeDatabase below).
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-// Write recent changes from the WAL side file into nelmora.db (now and every 5 minutes),
-// so copying nelmora.db on its own is always a complete backup.
-const checkpoint = () => { try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* busy: try next time */ } };
-checkpoint();
-setInterval(checkpoint, 5 * 60 * 1000).unref();
-
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -108,20 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
 CREATE INDEX IF NOT EXISTS idx_batches_product ON batches(product_id);
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
-`);
-
-// Migrations: event plan (target bottles + selling price per size, set before the event)
-const eventCols = new Set(db.prepare('PRAGMA table_info(events)').all().map((c) => c.name));
-for (const col of ['plan_qty_30', 'plan_price_30', 'plan_qty_10', 'plan_price_10', 'plan_cost_30', 'plan_cost_10']) {
-  if (!eventCols.has(col)) db.exec(`ALTER TABLE events ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`);
-}
-
-// Migration: scent notes per product (from the catalog)
-const productCols = new Set(db.prepare('PRAGMA table_info(products)').all().map((c) => c.name));
-// Migration: a sale can carry its scent separately from the stock product (e.g. when stock is counted by hand)
-const saleCols = new Set(db.prepare('PRAGMA table_info(sales)').all().map((c) => c.name));
-if (!saleCols.has('scent')) db.exec("ALTER TABLE sales ADD COLUMN scent TEXT NOT NULL DEFAULT ''");
-if (!productCols.has('notes')) db.exec("ALTER TABLE products ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+`;
 
 const DEFAULT_SETTINGS = {
   business_name: 'Nelmora',
@@ -136,21 +115,119 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-function seedDefaults() {
-  const has = db.prepare('SELECT 1 FROM settings WHERE key = ?');
-  const put = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
+// Tables, migrations and defaults. Safe to run on every open.
+function prepare(d) {
+  d.pragma('foreign_keys = ON');
+  d.exec(SCHEMA);
+
+  // Migrations: event plan (target bottles + selling price per size, set before the event)
+  const eventCols = new Set(d.prepare('PRAGMA table_info(events)').all().map((c) => c.name));
+  for (const col of ['plan_qty_30', 'plan_price_30', 'plan_qty_10', 'plan_price_10', 'plan_cost_30', 'plan_cost_10']) {
+    if (!eventCols.has(col)) d.exec(`ALTER TABLE events ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`);
+  }
+  // Migration: a sale can carry its scent separately from the stock product (e.g. when stock is counted by hand)
+  const saleCols = new Set(d.prepare('PRAGMA table_info(sales)').all().map((c) => c.name));
+  if (!saleCols.has('scent')) d.exec("ALTER TABLE sales ADD COLUMN scent TEXT NOT NULL DEFAULT ''");
+  // Migration: scent notes per product (from the catalog)
+  const productCols = new Set(d.prepare('PRAGMA table_info(products)').all().map((c) => c.name));
+  if (!productCols.has('notes')) d.exec("ALTER TABLE products ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+
+  const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');
+  const put = d.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
     if (!has.get(k)) put.run(k, JSON.stringify(v));
   }
-  const count = db.prepare('SELECT COUNT(*) c FROM products').get().c;
+  const count = d.prepare('SELECT COUNT(*) c FROM products').get().c;
   if (count === 0) {
-    const ins = db.prepare('INSERT INTO products (name, line, gender, price, reorder_level) VALUES (?,?,?,?,?)');
+    const ins = d.prepare('INSERT INTO products (name, line, gender, price, reorder_level) VALUES (?,?,?,?,?)');
     ins.run('Signature 30ml', '30ml', '', 60, 10);
     for (let i = 1; i <= 6; i++) ins.run(`Women ${i} (10ml)`, '10ml', 'Women', 16, 10);
     for (let i = 1; i <= 5; i++) ins.run(`Men ${i} (10ml)`, '10ml', 'Men', 16, 10);
   }
+  return d;
 }
-seedDefaults();
+
+// ---------------------------------------------------------------- current database
+// `db` always points at the database in use. On Netlify it is swapped per request, so every
+// module keeps using `db.prepare(...)` without knowing where the file lives.
+let current = null;
+let dbPath = '(in memory)';
+
+const db = new Proxy({}, {
+  get(_t, prop) {
+    if (!current) openLocalFile();
+    const v = current[prop];
+    return typeof v === 'function' ? v.bind(current) : v;
+  },
+});
+
+// On your computer: data/nelmora.db (or DATA_DIR/nelmora.db).
+function openLocalFile() {
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  dbPath = path.join(dataDir, 'nelmora.db');
+  current = new Database(dbPath);
+  current.pragma('journal_mode = WAL');
+  prepare(current);
+  // Write recent changes from the WAL side file into nelmora.db (now and every 5 minutes),
+  // so copying nelmora.db on its own is always a complete backup.
+  const checkpoint = () => { try { current.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* busy: try next time */ } };
+  checkpoint();
+  setInterval(checkpoint, 5 * 60 * 1000).unref();
+  return current;
+}
+
+// Copy of database file bytes that SQLite can open in memory. Files from your computer use WAL mode
+// (header bytes 18–19 = 2), which can't be opened from memory; switching them to 1 changes nothing in the data.
+function memoryBytes(buf) {
+  const b = Buffer.from(buf);
+  if (b.length > 19 && b.toString('latin1', 0, 15) === 'SQLite format 3' && (b[18] === 2 || b[19] === 2)) { b[18] = 1; b[19] = 1; }
+  return b;
+}
+
+// Open a database from file bytes (a backup, or the copy kept in Netlify Blobs). Empty → new database.
+function openFromBuffer(buf) {
+  return prepare(buf && buf.length ? new Database(memoryBytes(buf)) : new Database(':memory:'));
+}
+
+// Netlify: use this database for the current request.
+function useDatabase(d) { if (current && current !== d) { try { current.close(); } catch { /* already closed */ } } current = d; }
+
+// Check a backup file before restoring it: it must open and have the portal's tables.
+function checkBackup(buf) {
+  let d, tables;
+  try {
+    d = new Database(memoryBytes(buf));
+    tables = new Set(d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name));
+  } catch {
+    try { d?.close(); } catch { /* not open */ }
+    throw new Error('This is not a Nelmora backup file (.db).');
+  }
+  try {
+    for (const t of ['settings', 'products', 'batches', 'sales', 'events', 'transactions']) {
+      if (!tables.has(t)) throw new Error(`This file is missing the "${t}" table, so it is not a Nelmora backup.`);
+    }
+    return { sales: d.prepare('SELECT COUNT(*) c FROM sales').get().c, products: d.prepare('SELECT COUNT(*) c FROM products').get().c };
+  } finally { d.close(); }
+}
+
+// Replace all data with a backup file. On your computer the file on disk is replaced
+// (the old one is kept as nelmora-before-restore-<time>.db); on Netlify the function saves it after the request.
+function restoreDatabase(buf) {
+  const info = checkBackup(buf);
+  if (current && dbPath !== '(in memory)') {
+    current.close();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.copyFileSync(dbPath, path.join(path.dirname(dbPath), `nelmora-before-restore-${stamp}.db`));
+    for (const ext of ['-wal', '-shm']) fs.rmSync(dbPath + ext, { force: true });
+    fs.writeFileSync(dbPath, Buffer.from(buf));
+    current = null;
+    openLocalFile();
+  } else {
+    useDatabase(openFromBuffer(buf));
+  }
+  return info;
+}
 
 function getSettings() {
   const out = {};
@@ -160,4 +237,8 @@ function getSettings() {
   return out;
 }
 
-module.exports = { db, dbPath, getSettings, DEFAULT_SETTINGS };
+module.exports = {
+  db,
+  get dbPath() { if (!current) openLocalFile(); return dbPath; },
+  getSettings, DEFAULT_SETTINGS, openFromBuffer, useDatabase, checkBackup, restoreDatabase,
+};
