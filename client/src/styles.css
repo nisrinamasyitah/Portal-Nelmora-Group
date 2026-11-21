@@ -367,10 +367,25 @@ tr.current td { background: var(--wine-50); font-weight: 600; }
 .login-btn { width: 100%; justify-content: center; padding: 13px 16px; font-size: 15px; margin-top: 8px; }
 .login-note { text-align: center; margin-top: 20px; }
 .mobile-only { display: none; }
+/* Phone / tablet: the wine panel sits on top, the sign-in form below it on a rounded sheet. */
 @media (max-width: 860px) {
-  .login { grid-template-columns: 1fr; }
-  .login-hero { display: none; }
-  .login-panel { min-height: 100vh; padding: 32px 16px; }
-  .mobile-only { display: flex; padding: 0 0 32px; }
-  .mobile-only b { color: var(--wine-800); }
+  .login { grid-template-columns: 1fr; grid-template-rows: auto 1fr; min-height: 100vh; min-height: 100dvh; background: #19040a; }
+  .login-hero { padding: 36px 24px 64px; gap: 40px; justify-content: flex-start; }
+  .login-hero .brand b { font-size: 20px; }
+  .login-hero .brand span { display: block; }
+  .login-quote h2 { font-size: 26px; }
+  .login-quote p { margin-top: 10px; font-size: 14px; }
+  .login-legal { display: none; }
+  .login-panel {
+    place-items: start center;
+    padding: 32px 20px 40px;
+    margin-top: -28px;              /* sheet overlaps the wine panel a little */
+    position: relative;
+    z-index: 1;
+    background: var(--bg);
+    border-radius: 24px 24px 0 0;
+    box-shadow: 0 -8px 24px rgba(25, 4, 10, 0.18);
+  }
+  .login .box h1 { font-size: 26px; }
+  .login-sub { margin-bottom: 22px; }
 }
