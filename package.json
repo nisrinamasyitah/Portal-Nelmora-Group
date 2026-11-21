@@ -1,0 +1,20 @@
+{
+  "name": "nelmora-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nelmora business portal: cash flow, stock, event costing, sales, agents",
+  "scripts": {
+    "setup": "npm install && npm install --prefix client",
+    "dev": "concurrently -n api,web -c gray,white \"node --watch server/index.js\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "node server/index.js",
+    "seed:demo": "node server/seed-demo.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
