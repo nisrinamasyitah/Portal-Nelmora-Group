@@ -167,7 +167,10 @@ function useIdleLogout(active, onIdle) {
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel'];
     events.forEach((e) => window.addEventListener(e, onAct, { passive: true }));
     const timer = setInterval(() => { if (Date.now() - readActivity() > IDLE_MS) onIdle(); }, 10000);
-    return () => { events.forEach((e) => window.removeEventListener(e, onAct)); clearInterval(timer); };
+    // While someone is using the portal (activity in the last minute), check in with the server so the
+    // login stays valid there too. When nobody is active, the server's login also expires (6 minutes).
+    const keepAlive = setInterval(() => { if (Date.now() - readActivity() < 60000) api('/ping').catch(() => {}); }, 60000);
+    return () => { events.forEach((e) => window.removeEventListener(e, onAct)); clearInterval(timer); clearInterval(keepAlive); };
   }, [active, onIdle]);
 }
 

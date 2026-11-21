@@ -26,6 +26,20 @@
   to = "/index.html"
   status = 200
 
+# Security headers for every page
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Only this site's own code may run; fonts come from Google Fonts. Nobody can put the portal inside their site.
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    # Private business portal: keep it out of Google and other search engines.
+    X-Robots-Tag = "noindex, nofollow"
+
 # Local test of the Netlify setup: netlify dev
 [dev]
   framework = "#custom"

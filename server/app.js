@@ -23,20 +23,31 @@ const safeEq = (a, b) => {
   const y = crypto.createHash('sha256').update(String(b)).digest();
   return crypto.timingSafeEqual(x, y);
 };
-function makeToken() {
-  const exp = String(Date.now() + 1000 * 60 * 60 * 24 * 14); // 14 days
-  return `${exp}.${sign(exp)}`;
+// Login token = "<expires>.<signed-in at>.<signature>".
+// - Expires 6 minutes after the last activity (the browser logs out at 5 minutes idle; the extra minute
+//   is slack). While the portal is in use, every API reply carries a fresh token (X-New-Token header).
+// - However active, a login lasts at most 12 hours from signing in; then sign in again.
+const IDLE_MS = 6 * 60 * 1000;
+const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
+function makeToken(start = Date.now()) {
+  const exp = String(Math.min(Date.now() + IDLE_MS, start + MAX_SESSION_MS));
+  const payload = `${exp}.${start}`;
+  return `${payload}.${sign(payload)}`;
 }
-function validToken(t) {
-  if (!t) return false;
-  const [exp, sig] = t.split('.');
-  return !!sig && Number(exp) > Date.now() && safeEq(sig, sign(exp));
+function readToken(t) {
+  const [exp, start, sig] = String(t || '').split('.');
+  if (!exp || !start || !sig || !safeEq(sig, sign(`${exp}.${start}`))) return null;
+  if (!(Number(exp) > Date.now())) return null;
+  if (Date.now() - Number(start) > MAX_SESSION_MS) return null; // signed in more than 12 hours ago
+  return { exp: Number(exp), start: Number(start) };
 }
-const failures = new Map(); // tiny brute-force guard
+// Business data (and login replies) must never be cached by browsers or proxies.
+app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+const failures = new Map(); // brute-force guard on your computer (Netlify adds a shared one in the function)
 app.post('/api/login', (req, res) => {
   const ip = req.ip;
   const f = failures.get(ip) || { n: 0, until: 0 };
-  if (f.until > Date.now()) return res.status(429).json({ error: 'Too many attempts. Try again in a minute.' });
+  if (f.until > Date.now()) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
   const emailOk = !EMAIL || safeEq(String(req.body.email || '').trim().toLowerCase(), EMAIL);
   const passOk = safeEq(req.body.password || '', PASSWORD);
   if (!PASSWORD || (emailOk && passOk)) {
@@ -44,17 +55,20 @@ app.post('/api/login', (req, res) => {
     return res.json({ token: makeToken() });
   }
   f.n += 1;
-  if (f.n >= 5) { f.until = Date.now() + 60_000; f.n = 0; }
+  if (f.n >= 5) { f.until = Date.now() + 15 * 60_000; f.n = 0; }
   failures.set(ip, f);
   res.status(401).json({ error: EMAIL ? 'Incorrect email or password' : 'Wrong password' });
 });
 app.get('/api/auth-required', (_req, res) => res.json({ required: !!PASSWORD, email: !!EMAIL }));
 app.use('/api', (req, res, next) => {
   if (!PASSWORD) return next();
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (validToken(token)) return next();
-  res.status(401).json({ error: 'Login required' });
+  const t = readToken((req.headers.authorization || '').replace('Bearer ', ''));
+  if (!t) return res.status(401).json({ error: 'Login required' });
+  res.setHeader('X-New-Token', makeToken(t.start)); // activity keeps the login alive (up to 12 hours)
+  next();
 });
+// Called by the browser every minute while someone is using the portal, to keep the login alive.
+app.get('/api/ping', (_req, res) => res.json({ ok: true }));
 
 // ---------------------------------------------------------------- helpers
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);

@@ -25,17 +25,17 @@ const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset +
 let consistency = 'strong';
 const STORE = process.env.BLOBS_STORE || 'nelmora'; // only changed for testing
 const store = () => getStore({ name: STORE, consistency });
-async function load(blobs) {
+async function withStore(fn) {
   try {
-    return { blobs, saved: await blobs.getWithMetadata(KEY, { type: 'arrayBuffer' }) };
+    return await fn(store());
   } catch (e) {
     if (consistency !== 'strong' || e?.name !== 'BlobsConsistencyError') throw e;
     console.warn('Netlify Blobs: strong consistency not available here, using eventual consistency.');
     consistency = 'eventual';
-    const again = store();
-    return { blobs: again, saved: await again.getWithMetadata(KEY, { type: 'arrayBuffer' }) };
+    return fn(store());
   }
 }
+const load = () => withStore(async (blobs) => ({ blobs, saved: await blobs.getWithMetadata(KEY, { type: 'arrayBuffer' }) }));
 
 // Run the Express portal for a web Request (via serverless-http's event format).
 const outer = express();
@@ -43,7 +43,7 @@ outer.use((req, _res, next) => { req.url = req.url.replace(/^\/\.netlify\/functi
 outer.use(app);
 const run = serverless(outer, { binary: ['application/octet-stream'] });
 
-async function runPortal(req) {
+async function runPortal(req, ip = "unknown") {
   const url = new URL(req.url);
   const headers = Object.fromEntries(req.headers);
   const body = req.method === 'GET' || req.method === 'HEAD' ? null : Buffer.from(await req.arrayBuffer());
@@ -56,7 +56,7 @@ async function runPortal(req) {
     multiValueQueryStringParameters: null,
     body: body ? body.toString('base64') : null,
     isBase64Encoded: !!body,
-    requestContext: {},
+    requestContext: { identity: { sourceIp: ip } }, // the visitor's address, so per-device limits work
   }, {});
   const resHeaders = new Headers();
   for (const [k, v] of Object.entries(out.headers || {})) resHeaders.set(k, String(v));
@@ -65,21 +65,67 @@ async function runPortal(req) {
   return { status: out.statusCode, headers: resHeaders, body: resBody };
 }
 
-const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const clientIp = (req, context) => context?.ip || req.headers.get('x-nf-client-connection-ip') || 'unknown';
+const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
-export default async (req) => {
+// ---------------------------------------------------------------- password-guess protection
+// Kept in Blobs, so every copy of the function shares the count:
+// 5 wrong tries from one device → that device waits 15 minutes;
+// 30 wrong tries from anywhere within 15 minutes → login is paused for everyone for 15 minutes.
+const GUARD_KEY = 'login-guard.json';
+const LOCK_MS = 15 * 60 * 1000;
+const PER_DEVICE = 5;
+const ALL_DEVICES = 30;
+const tooMany = (until) => json(429, { error: `Too many wrong attempts. Try again after ${new Date(until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` });
+
+async function loginGuard(ip, attempt) {
+  const now = Date.now();
+  // If the guard can't be read, the error stops the sign-in (fail closed) rather than skipping the check.
+  const { blobs, g: saved } = await withStore(async (b) => ({ blobs: b, g: await b.get(GUARD_KEY, { type: 'json' }) }));
+  const g = saved || { ips: {}, all: { n: 0, since: now, until: 0 } };
+  for (const [k, v] of Object.entries(g.ips)) if (v.until < now && now - (v.last || 0) > LOCK_MS) delete g.ips[k];
+  if (now - g.all.since > LOCK_MS && g.all.until < now) g.all = { n: 0, since: now, until: 0 };
+  const lockedUntil = Math.max(g.ips[ip]?.until || 0, g.all.until || 0);
+  if (lockedUntil > now) return tooMany(lockedUntil);
+
+  const res = await attempt();
+  if (res.status === 401) {
+    const d = g.ips[ip] || { n: 0, until: 0 };
+    d.n += 1; d.last = now;
+    if (d.n >= PER_DEVICE) { d.until = now + LOCK_MS; d.n = 0; }
+    g.ips[ip] = d;
+    g.all.n += 1;
+    if (g.all.n >= ALL_DEVICES) { g.all.until = now + LOCK_MS; g.all.n = 0; g.all.since = now; }
+    await blobs.setJSON(GUARD_KEY, g);
+  } else if (res.status === 200 && g.ips[ip]) {
+    delete g.ips[ip];
+    await blobs.setJSON(GUARD_KEY, g);
+  }
+  return res;
+}
+
+export default async (req, context) => {
+  // Sign-in attempts go through the guard (the database isn't needed to check a password).
+  if (req.method === 'POST' && /\/api\/login$/.test(new URL(req.url).pathname)) {
+    const ip = clientIp(req, context);
+    return loginGuard(ip, async () => {
+      useDatabase(openFromBuffer(null));
+      const res = await runPortal(req, ip);
+      return new Response(res.body, { status: res.status, headers: res.headers });
+    });
+  }
+
   // 1. Load the database (a new, empty one the very first time).
-  const { blobs, saved } = await load(store());
+  const { blobs, saved } = await load();
   const original = saved ? Buffer.from(saved.data) : null;
   useDatabase(openFromBuffer(original));
 
   // 2. Run the portal.
-  const res = await runPortal(req);
+  const res = await runPortal(req, clientIp(req, context));
   const reply = () => new Response(res.status === 204 || res.status === 304 ? null : res.body, { status: res.status, headers: res.headers });
 
-  // 3. Save changes. Reads (GET) and the login don't change anything.
-  const isLogin = /\/login$/.test(new URL(req.url).pathname);
-  if (req.method === 'GET' || req.method === 'HEAD' || isLogin || res.status >= 400) return reply();
+  // 3. Save changes. Reads (GET) don't change anything.
+  if (req.method === 'GET' || req.method === 'HEAD' || res.status >= 400) return reply();
 
   const today = new Date().toLocaleDateString('en-CA');
   if (original) await blobs.set(`backups/${today}.db`, toArrayBuffer(original), { onlyIfNew: true });

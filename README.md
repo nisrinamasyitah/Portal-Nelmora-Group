@@ -76,7 +76,7 @@ One-time setup:
    downloaded from the portal on your computer. All data (sales, stock, events, cash) moves across.
 
 After that, record everything on the online portal only, so there is one set of figures.
-Test the Netlify setup on your computer with `netlify dev` (opens http://localhost:8888).
+Test the Netlify setup on your computer with `netlify serve` (opens http://localhost:8888). (`netlify dev` shows a blank page because the security settings block its live-reload script.)
 
 ## Project layout
 
