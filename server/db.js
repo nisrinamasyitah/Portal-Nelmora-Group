@@ -4,7 +4,7 @@ const fs = require('fs');
 
 // The database is one SQLite file.
 // - On your computer (npm start / npm run dev): data/nelmora.db on disk.
-// - On Netlify: the same file is kept in Netlify Blobs; netlify/functions/api.js loads it into memory
+// - On Netlify: the same file is kept in Netlify Blobs; netlify/functions/api.mjs loads it into memory
 //   for each request and saves it back after changes (see useDatabase / serializeDatabase below).
 
 const SCHEMA = `

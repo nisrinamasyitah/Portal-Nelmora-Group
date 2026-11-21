@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-// The portal's API. Started on your computer by server/index.js, and on Netlify by netlify/functions/api.js.
+// The portal's API. Started on your computer by server/index.js, and on Netlify by netlify/functions/api.mjs.
 // Settings (PORTAL_PASSWORD, ...) must already be in process.env when this file is loaded.
 const express = require('express');
 const { db, getSettings, restoreDatabase } = require('./db');

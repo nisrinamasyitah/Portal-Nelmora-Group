@@ -1,5 +1,5 @@
 # Netlify settings for portal.nelmoragroup.com
-# The website (client/) is built into client/dist; the API runs as one function (netlify/functions/api.js)
+# The website (client/) is built into client/dist; the API runs as one function (netlify/functions/api.mjs)
 # and keeps the database in Netlify Blobs.
 
 [build]
@@ -14,13 +14,11 @@
   node_bundler = "esbuild"
   # Copied as-is instead of bundled (better-sqlite3 has a compiled part built for Netlify's servers).
   external_node_modules = ["better-sqlite3", "express"]
+  # better-sqlite3 is loaded in a way the packager can't follow, so include its folder explicitly
+  # (it contains the ready-made SQLite engine for Linux in prebuilds/).
+  included_files = ["node_modules/better-sqlite3/**"]
 
-# API calls go to the function
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
-  force = true
+# API calls (/api/*) go to the function; its path is set inside netlify/functions/api.mjs.
 
 # Every other page loads the app (Stock, Sales, ... are handled in the browser)
 [[redirects]]

@@ -1,4 +1,4 @@
-// Runs the portal on your computer: npm start (or npm run dev). Netlify uses netlify/functions/api.js instead.
+// Runs the portal on your computer: npm start (or npm run dev). Netlify uses netlify/functions/api.mjs instead.
 const path = require('path');
 
 try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch { /* .env is optional */ }

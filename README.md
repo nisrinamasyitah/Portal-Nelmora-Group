@@ -64,7 +64,7 @@ To wipe it and start clean: stop the server and delete the `data/` folder.
 ## Online at portal.nelmoragroup.com (Netlify)
 
 The same code runs on Netlify. `netlify.toml` builds the website, and the API runs as one function
-(`netlify/functions/api.js`). Netlify doesn't keep files, so the database file is stored in **Netlify Blobs**
+(`netlify/functions/api.mjs`). Netlify doesn't keep files, so the database file is stored in **Netlify Blobs**
 (store `nelmora`). A copy of it from the start of each day is kept automatically as `backups/YYYY-MM-DD.db`.
 
 One-time setup:
