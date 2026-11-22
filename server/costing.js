@@ -51,7 +51,9 @@ function sheetReport(id, depth = 0) {
   if (!sheet) return null;
   const c = compute();
   const start = sheet.start_date;
-  const end = sheet.end_date || today();
+  // A running sheet goes up to today — or further, to include its own restocks dated ahead.
+  const ownLast = db.prepare('SELECT MAX(date) d FROM restock_groups WHERE sheet_id = ?').get(sheet.id).d;
+  const end = sheet.end_date || (ownLast && ownLast > today() ? ownLast : today());
   const inRange = (d) => d >= start && d <= end;
   const products = c.products;
   const lineOf = (pid) => c.productById.get(pid)?.line;
