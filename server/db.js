@@ -207,6 +207,9 @@ function prepare(d) {
   const batchCols = new Set(d.prepare('PRAGMA table_info(batches)').all().map((c) => c.name));
   if (!batchCols.has('group_id')) d.exec('ALTER TABLE batches ADD COLUMN group_id INTEGER REFERENCES restock_groups(id) ON DELETE SET NULL');
   const txCols = new Set(d.prepare('PRAGMA table_info(transactions)').all().map((c) => c.name));
+  // Migration: figures copied from an Excel costing sheet (sections 1–3 and its result), for sheets 0001–0006.
+  const sheetCols = new Set(d.prepare('PRAGMA table_info(costing_sheets)').all().map((c) => c.name));
+  if (!sheetCols.has('excel')) d.exec("ALTER TABLE costing_sheets ADD COLUMN excel TEXT NOT NULL DEFAULT ''");
   if (!txCols.has('sheet_id')) d.exec('ALTER TABLE transactions ADD COLUMN sheet_id INTEGER REFERENCES costing_sheets(id) ON DELETE SET NULL');
 
   const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');

@@ -94,6 +94,22 @@ function sheetReport(id) {
     };
   });
 
+  // Imported Excel sheets (0001–0006): show the sheet's own leftover / restock / blended figures in
+  // sections 1–3 (the portal did not track bottles per scent before 29 Oct), and compare its result.
+  let excel = null;
+  try { excel = sheet.excel ? JSON.parse(sheet.excel) : null; } catch { excel = null; }
+  if (excel?.lines) {
+    for (const l of lines) {
+      const x = excel.lines[l.size];
+      if (!x) continue;
+      const lq = x.leftover?.[0] || 0, lc = x.leftover?.[1] || 0, rq = x.restock?.[0] || 0, rc = x.restock?.[1] || 0;
+      l.leftover = { qty: lq, cost: r2(lc), value: r2(lq * lc) };
+      l.restock = { qty: rq, cost: r2(rc), value: r2(rq * rc) };
+      l.combined = { qty: lq + rq, cost: lq + rq ? r2((lq * lc + rq * rc) / (lq + rq)) : 0 };
+      l.from_sheet = true;
+    }
+  }
+
   // 4. Fixed costs
   const sheetCosts = db.prepare('SELECT id, date, description, amount, category FROM transactions WHERE sheet_id = ? ORDER BY date, id').all(sheet.id);
   const eventCosts = event ? event.costs.map((x) => ({ id: 'e' + x.id, date: x.date, description: x.description || x.category, amount: x.amount, from_event: true })) : [];
@@ -135,8 +151,18 @@ function sheetReport(id) {
     }),
   }));
 
+  // Check against the Excel sheet's own result (rows 6): ✓ when equal to the sen.
+  const check = excel?.result ? [
+    ['Total fixed cost', excel.result.fixed, result.fixed],
+    ['Total variable cost', excel.result.variable, result.variable],
+    ['Total cost', excel.result.total, result.total],
+    ['Total sale', excel.result.sales, result.sales],
+    ['Net profit', excel.result.profit, result.profit],
+  ].map(([label, x, p]) => ({ label, excel: r2(x), portal: r2(p), ok: Math.abs(r2(x) - r2(p)) < 0.01 })) : null;
+
   return {
-    sheet: { ...sheet, end_effective: end, event_name: event?.name || null },
+    sheet: { ...sheet, end_effective: end, event_name: event?.name || null, excel: undefined },
+    check, check_notes: excel?.notes || [],
     lines, groups, fixed: fixedRows, result, scenario, ledger,
     sales_note: event ? `Sales of ${event.name}` : 'Sales outside events (direct selling, agents, online)',
   };
@@ -153,10 +179,11 @@ function mount(app, h) {
   }));
   app.get('/api/costing/:id', wrap((req, res) => { const r = sheetReport(Number(req.params.id)); if (!r) throw notFound(); res.json(r); }));
 
-  const SHEET = { code: 'text', title: 'text', start_date: 'date', end_date: 'text', event_id: 'id', note: 'text' };
+  const SHEET = { code: 'text', title: 'text', start_date: 'date', end_date: 'text', event_id: 'id', note: 'text', excel: 'text' };
   const clean = (d) => {
     if (d.end_date !== undefined) { if (d.end_date && !isDate(d.end_date)) throw bad('end_date must be a date'); d.end_date = d.end_date || null; }
     if (d.start_date && d.end_date && d.end_date < d.start_date) throw bad('End date is before start date');
+    if (d.excel) { try { JSON.parse(d.excel); } catch { throw bad('excel must be JSON'); } }
     return d;
   };
   app.post('/api/costing', wrap((req, res) => {

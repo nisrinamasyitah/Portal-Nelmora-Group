@@ -169,7 +169,9 @@ export function CostingSheet() {
   const [modal, setModal] = useState(null);
   const close = (saved) => { setModal(null); if (saved) r.reload(); };
   if (!r.data) return <Loading state={r} />;
-  const { sheet, lines, groups, fixed, result, scenario, ledger, sales_note } = r.data;
+  const { sheet, lines, groups, fixed, result, scenario, ledger, sales_note, check, check_notes } = r.data;
+  const fromSheet = lines.some((l) => l.from_sheet);
+  const srcNote = (portalText) => (fromSheet ? `From the ${sheet.code} Excel costing sheet.` : portalText);
   const L = Object.fromEntries(lines.map((l) => [l.size, l]));
 
   return (
@@ -187,7 +189,7 @@ export function CostingSheet() {
             <thead><tr><th /><th className="num">Bottles</th><th className="num">Cost / bottle</th><th className="num">Value</th></tr></thead>
             <tbody>{SIZES.map((s) => <tr key={s}><td><b>{s}</b></td><td className="num">{L[s].leftover.qty}</td><td className="num">{rm4(L[s].leftover.cost)}</td><td className="num">{rm(L[s].leftover.value)}</td></tr>)}</tbody>
           </table>
-          <p className="muted small">Stock on hand on {fmtDate(sheet.start_date)}, at its moving-average cost.</p>
+          <p className="muted small">{srcNote(`Stock on hand on ${fmtDate(sheet.start_date)}, at its moving-average cost.`)}</p>
         </Section>
 
         <Section n="3" title="Combined stock & blended cost">
@@ -195,7 +197,7 @@ export function CostingSheet() {
             <thead><tr><th /><th className="num">Bottles available</th><th className="num">Blended cost / bottle</th></tr></thead>
             <tbody>{SIZES.map((s) => <tr key={s}><td><b>{s}</b></td><td className="num">{L[s].combined.qty}</td><td className="num"><b>{rm4(L[s].combined.cost)}</b></td></tr>)}</tbody>
           </table>
-          <p className="muted small">Leftover + new restock, blended as a weighted average.</p>
+          <p className="muted small">{srcNote('Leftover + new restock, blended as a weighted average.')}</p>
         </Section>
       </div>
 
@@ -205,7 +207,8 @@ export function CostingSheet() {
             <div key={s} className="sheet-kpi"><span className="muted small">{s} restocked</span><b>{L[s].restock.qty} bottles</b><span className="muted small">{L[s].restock.qty ? `${rm4(L[s].restock.cost)} / bottle · ${rm(L[s].restock.value)}` : 'none in this period'}</span></div>
           ))}
         </div>
-        {groups.length === 0 ? <p className="muted small" style={{ margin: 0 }}>No restock in this period yet.</p> : groups.map((g) => (
+        {fromSheet && <p className="muted small" style={{ margin: '0 0 8px' }}>Restock figures from the {sheet.code} Excel costing sheet.</p>}
+        {groups.length === 0 ? (!fromSheet && <p className="muted small" style={{ margin: 0 }}>No restock in this period yet.</p>) : groups.map((g) => (
           <div key={g.id} className="restock-group">
             <div className="restock-head">
               <b>{fmtDate(g.date)} · {g.size} restock</b>
@@ -241,7 +244,7 @@ export function CostingSheet() {
             <tbody>{SIZES.map((s) => <tr key={s}><td><b>{s}</b></td><td className="num">{L[s].sold.qty}</td><td className="num">{L[s].sold.qty ? rm(L[s].sold.price) : '–'}</td><td className="num">{rm(L[s].sold.revenue)}</td></tr>)}</tbody>
             <tfoot><tr><td>Total</td><td className="num">{result.bottles}</td><td /><td className="num">{rm(result.sales)}</td></tr></tfoot>
           </table>
-          <p className="muted small">{sales_note}. Remaining now: 30ml {L['30ml'].remaining} · 10ml {L['10ml'].remaining}.</p>
+          <p className="muted small">{sales_note}. Remaining at the end of the period: 30ml {L['30ml'].remaining} · 10ml {L['10ml'].remaining}.</p>
         </Section>
       </div>
 
@@ -263,6 +266,19 @@ export function CostingSheet() {
           ))}
         </div>
       </Section>
+
+      {check && (
+        <Section n="✓" title={`Check against the ${sheet.code} Excel sheet`}>
+          <table className="compact sheet-table">
+            <thead><tr><th /><th className="num">Excel sheet</th><th className="num">Portal</th><th className="num">Tally</th></tr></thead>
+            <tbody>{check.map((x) => (
+              <tr key={x.label}><td>{x.label}</td><td className="num">{rm(x.excel)}</td><td className="num">{rm(x.portal)}</td>
+                <td className={'num ' + (x.ok ? 'pos' : 'neg')}><b>{x.ok ? '✓ Same' : `${x.portal > x.excel ? '+' : '−'}${rm(Math.abs(x.portal - x.excel))}`}</b></td></tr>
+            ))}</tbody>
+          </table>
+          {check_notes.length > 0 && <ul className="steps small" style={{ marginBottom: 0 }}>{check_notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+        </Section>
+      )}
 
       <Section n="7" title="Price scenario (at the bottles sold)">
         {result.bottles === 0 ? <p className="muted small" style={{ margin: 0 }}>Shows once there are sales in this period.</p> : (

@@ -7,7 +7,7 @@ export default defineConfig({
     // Libraries in their own files: they rarely change, so browsers keep them cached between updates.
     rolldownOptions: {
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
             { name: 'charts', test: /node_modules[\\/](recharts|d3-|victory|internmap|decimal\.js|eventemitter3|lodash|react-smooth|recharts-scale|tiny-invariant|clsx|immer|reselect|redux|@reduxjs|use-sync-external-store|es-toolkit)/ },
