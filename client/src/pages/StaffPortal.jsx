@@ -26,7 +26,7 @@ function UpdateModal({ design, onClose }) {
         </div>
       </Field>
       <Field label="File link" hint="Canva, Google Drive… link to the finished design."><input value={f.file_link} onChange={(e) => set('file_link', e.target.value)} placeholder="https://…" /></Field>
-      <Field label="Note to owner (optional)"><textarea rows={2} value={f.staff_note} onChange={(e) => set('staff_note', e.target.value)} /></Field>
+      <Field label="Note to Nelmora (optional)"><textarea rows={2} value={f.staff_note} onChange={(e) => set('staff_note', e.target.value)} /></Field>
     </FormModal>
   );
 }
