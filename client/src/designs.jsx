@@ -22,11 +22,27 @@ export function FeeText({ d }) {
   );
 }
 
-// Payment description, shown under the design name (event, number of designs, receipt).
-export function PaidNote({ d }) {
-  if (!d.paid) return null;
-  const text = d.paid_note || (d.transaction_id ? 'Recorded in Cash flow (Design)' : '');
-  return text ? <div className="row-note pay-note">{text}</div> : null;
+// Event dates, e.g. "7–8 Nov 2026" or "30 Oct – 1 Nov 2026".
+function eventDates(start, end) {
+  const s = new Date(start + 'T00:00:00'), e = new Date((end || start) + 'T00:00:00');
+  const dm = (x) => x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  if (s.getTime() === e.getTime()) return `${dm(s)} ${s.getFullYear()}`;
+  if (s.getMonth() === e.getMonth()) return `${s.getDate()}–${dm(e)} ${e.getFullYear()}`;
+  return `${dm(s)} – ${dm(e)} ${e.getFullYear()}`;
+}
+
+// The design cell: title, then tidy lines underneath (event · dates, receipt / payment note, file, note).
+export function DesignCell({ d, showStaffNote }) {
+  const payment = d.paid ? (d.paid_note || (d.transaction_id ? 'Recorded in Cash flow (Design)' : '')) : '';
+  return (
+    <>
+      <b>{d.title}</b>
+      {d.event_name && <div className="design-line">{d.event_name}{d.event_date ? ` · ${eventDates(d.event_date, d.event_end)}` : ''}</div>}
+      {payment && <div className="design-line muted">{payment}</div>}
+      {d.file_link && <div className="design-line"><a href={d.file_link} target="_blank" rel="noopener noreferrer">Open file ↗</a></div>}
+      {showStaffNote && d.staff_note && <div className="design-line muted">Note: {d.staff_note}</div>}
+    </>
+  );
 }
 
 // "Paid on" column: the date the design was paid, or a dash.

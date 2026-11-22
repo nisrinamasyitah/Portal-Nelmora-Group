@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { Empty, Field, FormModal, Loading, PageHead, Stat, useApi } from '../components.jsx';
-import { DueText, FeeText, PaidBadge, PaidNote, PaidOn, STATUS, STATUS_ORDER, StatusBadge, daysUntil } from '../designs.jsx';
+import { DueText, FeeText, PaidBadge, DesignCell, PaidOn, STATUS, STATUS_ORDER, StatusBadge, daysUntil } from '../designs.jsx';
 import { fmtDate, rm, today } from '../utils.js';
 
 const shortName = (n) => n.replace(/ \((10|30)ml\)$/, '');
@@ -41,10 +41,7 @@ function JobList({ rows, onOpen, empty }) {
           {rows.map((d) => (
             <tr key={d.id}>
               <td>
-                <b>{d.title}</b>
-                {d.event_name && !d.paid_note && <div className="row-note">For {d.event_name}</div>}
-                      <PaidNote d={d} />
-                {d.file_link && <div className="row-note"><a href={d.file_link} target="_blank" rel="noopener noreferrer">Open file ↗</a></div>}
+                <DesignCell d={d} />
               </td>
               <td className="nowrap"><DueText date={d.due_date} done={d.status === 'done'} /></td>
               <td className="nowrap"><StatusBadge status={d.status} /> <PaidBadge d={d} /></td>

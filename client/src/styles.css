@@ -403,5 +403,6 @@ tr.current td { background: var(--wine-50); font-weight: 600; }
 .brief { background: var(--wine-50); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13.5px; }
 .brief p { margin: 4px 0 0; white-space: pre-wrap; }
 textarea { width: 100%; resize: vertical; font: inherit; }
-.pay-note { max-width: 420px; }
+.design-line { font-size: 12.5px; line-height: 1.45; margin-top: 3px; max-width: 460px; }
+.design-line.muted { color: var(--muted); }
 table td:first-child b { overflow-wrap: anywhere; }

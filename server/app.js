@@ -474,7 +474,7 @@ app.get('/api/staff/events', wrap((_req, res) => {
 // ---------------------------------------------------------------- design jobs
 const designFee = () => { const s = getSettings(); return r2((Number(s.design_fee_base) || 0) * (1 + (Number(s.design_fee_pct) || 0) / 100)); };
 const DESIGN_SQL = `
-  SELECT d.*, u.name AS assignee_name, e.name AS event_name, e.start_date AS event_date, COALESCE(t.date, d.paid_on) AS paid_date, (d.transaction_id IS NULL AND d.paid_on IS NOT NULL) AS paid_outside
+  SELECT d.*, u.name AS assignee_name, e.name AS event_name, e.start_date AS event_date, e.end_date AS event_end, COALESCE(t.date, d.paid_on) AS paid_date, (d.transaction_id IS NULL AND d.paid_on IS NOT NULL) AS paid_outside
   FROM designs d
   LEFT JOIN users u ON u.id = d.assignee_id
   LEFT JOIN events e ON e.id = d.event_id

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { Empty, Field, FormModal, Loading, PageHead, Stat, confirmDelete, useApi } from '../components.jsx';
-import { DueText, FeeText, PaidBadge, PaidNote, PaidOn, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
+import { DueText, FeeText, PaidBadge, DesignCell, PaidOn, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
 import { rm, today } from '../utils.js';
 
 // Owner view: assign design jobs to staff, follow progress, pay fees.
@@ -127,11 +127,7 @@ export default function Designs() {
                 {shown.map((d) => (
                   <tr key={d.id}>
                     <td>
-                      <b>{d.title}</b>
-                      {d.event_name && !d.paid_note && <div className="row-note">For {d.event_name}</div>}
-                      <PaidNote d={d} />
-                      {d.file_link && <div className="row-note"><a href={d.file_link} target="_blank" rel="noopener noreferrer">Open file ↗</a></div>}
-                      {d.staff_note && <div className="row-note">Note: {d.staff_note}</div>}
+                      <DesignCell d={d} showStaffNote />
                     </td>
                     <td>{d.assignee_name || <span className="muted">Not assigned</span>}</td>
                     <td className="nowrap"><DueText date={d.due_date} done={d.status === 'done'} /></td>
