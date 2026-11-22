@@ -189,7 +189,9 @@ export function CostingSheet() {
             <thead><tr><th /><th className="num">Bottles</th><th className="num">Cost / bottle</th><th className="num">Value</th></tr></thead>
             <tbody>{SIZES.map((s) => <tr key={s}><td><b>{s}</b></td><td className="num">{L[s].leftover.qty}</td><td className="num">{rm4(L[s].leftover.cost)}</td><td className="num">{rm(L[s].leftover.value)}</td></tr>)}</tbody>
           </table>
-          <p className="muted small">{srcNote(`Stock on hand on ${fmtDate(sheet.start_date)}, at its moving-average cost.`)}</p>
+          <p className="muted small">{srcNote(lines.some((l) => l.leftover_from_prev)
+            ? `Bottles on hand on ${fmtDate(sheet.start_date)}, at the previous sheet's blended cost (like the Excel sheets).`
+            : `Stock on hand on ${fmtDate(sheet.start_date)}, at its moving-average cost.`)}</p>
         </Section>
 
         <Section n="3" title="Combined stock & blended cost">

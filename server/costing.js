@@ -46,7 +46,7 @@ function nextCode() {
   return String(Math.max(Number(max) || 6, 6) + 1).padStart(4, '0'); // Excel sheets went up to 0006
 }
 
-function sheetReport(id) {
+function sheetReport(id, depth = 0) {
   const sheet = db.prepare('SELECT * FROM costing_sheets WHERE id = ?').get(id);
   if (!sheet) return null;
   const c = compute();
@@ -107,6 +107,23 @@ function sheetReport(id) {
       l.restock = { qty: rq, cost: r2(rc), value: r2(rq * rc) };
       l.combined = { qty: lq + rq, cost: lq + rq ? r2((lq * lc + rq * rc) / (lq + rq)) : 0 };
       l.from_sheet = true;
+    }
+  }
+
+  // Like the Excel sheets: a new sheet's leftover bottles carry the previous sheet's blended cost
+  // ("Leftover cost/bottle — from last batch"), so the chain 0006 → 0007 → 0008 matches the sheets.
+  if (!excel?.lines) {
+    const prev = db.prepare('SELECT id FROM costing_sheets WHERE id != ? AND (start_date < ? OR (start_date = ? AND code < ?)) ORDER BY start_date DESC, code DESC LIMIT 1')
+      .get(sheet.id, start, start, sheet.code);
+    const prevLines = prev && depth < 3 ? sheetReport(prev.id, depth + 1)?.lines : null;
+    for (const l of lines) {
+      const pc = prevLines?.find((x) => x.size === l.size)?.combined.cost;
+      if (!(pc > 0) || !l.leftover.qty) continue;
+      l.leftover.cost = r2(pc);
+      l.leftover.value = r2(l.leftover.qty * pc);
+      const rv = l.restock.qty * l.restock.cost;
+      l.combined.cost = l.combined.qty ? r2((l.leftover.qty * pc + rv) / l.combined.qty) : 0;
+      l.leftover_from_prev = true;
     }
   }
 
