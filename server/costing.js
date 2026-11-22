@@ -71,8 +71,11 @@ function sheetReport(id) {
 
   const lines = SIZES.map((size) => {
     const ids = products.filter((p) => p.line === size && isCatalog(p)).map((p) => p.id);
-    const leftQty = ids.reduce((a, i) => a + Math.max(opening.get(i).qty, 0), 0);
-    const leftVal = ids.reduce((a, i) => a + Math.max(opening.get(i).qty, 0) * opening.get(i).avg, 0);
+    // Leftover = stock on hand at the start + bottles counted during the period (stock counts of bottles
+    // already owned — that's how leftover was entered before an event, like "Leftover stock" on the sheet).
+    const counted = batches.filter((b) => ids.includes(b.product_id) && isCount(b.note));
+    const leftQty = ids.reduce((a, i) => a + Math.max(opening.get(i).qty, 0), 0) + counted.reduce((a, b) => a + b.qty, 0);
+    const leftVal = ids.reduce((a, i) => a + Math.max(opening.get(i).qty, 0) * opening.get(i).avg, 0) + counted.reduce((a, b) => a + b.qty * b.unit_cost, 0);
     const restock = batches.filter((b) => lineOf(b.product_id) === size && !isCount(b.note));
     const rQty = restock.reduce((a, b) => a + b.qty, 0);
     const rVal = restock.reduce((a, b) => a + b.qty * b.unit_cost, 0);
