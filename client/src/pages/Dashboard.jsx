@@ -3,6 +3,36 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Empty, Loading, PageHead, Stat, useApi } from '../components.jsx';
 import { COLORS, fmtDate, monthLabel, monthShort, rm, tone } from '../utils.js';
 
+// How much each staff member (designer) has earned: paid so far, plus finished designs not paid yet.
+function StaffEarnings() {
+  const designs = useApi('/designs');
+  if (!designs.data) return null;
+  const people = new Map();
+  for (const d of designs.data.rows) {
+    if (!d.assignee_name) continue;
+    const p = people.get(d.assignee_name) || { name: d.assignee_name, paid: 0, waiting: 0, count: 0 };
+    if (d.paid) { p.paid += d.fee; p.count += 1; } else if (d.status === 'done') { p.waiting += d.fee; p.count += 1; }
+    people.set(p.name, p);
+  }
+  if (!people.size) return null;
+  return (
+    <div className="card">
+      <h2>Staff earnings <Link to="/designs">Designs</Link></h2>
+      <ul className="list">
+        {[...people.values()].map((p) => (
+          <li key={p.name}>
+            <span>
+              <b>{p.name}</b>
+              <div className="muted small">{rm(p.paid)} paid{p.waiting ? ` · ${rm(p.waiting)} waiting` : ''} · {p.count} designs</div>
+            </span>
+            <b className="nowrap">{rm(p.paid + p.waiting)}</b>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const st = useApi('/dashboard');
   const d = st.data;
@@ -106,6 +136,8 @@ export default function Dashboard() {
             </ul>
           )}
         </div>
+
+        <StaffEarnings />
       </div>
     </>
   );

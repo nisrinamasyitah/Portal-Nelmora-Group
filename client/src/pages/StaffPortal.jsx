@@ -68,6 +68,9 @@ export function StaffDashboard({ me }) {
   const active = rows.filter((d) => d.status !== 'done');
   const doneMonth = rows.filter((d) => d.status === 'done' && (d.done_date || '').startsWith(month));
   const unpaid = rows.filter((d) => d.status === 'done' && !d.paid);
+  // Earnings: everything she has been paid, plus finished designs not paid yet.
+  const earnedPaid = rows.filter((d) => d.paid).reduce((a, d) => a + d.fee, 0);
+  const earnedWaiting = unpaid.reduce((a, d) => a + d.fee, 0);
   const upcoming = (events.data || []).filter((e) => e.end_date >= today()).sort((a, b) => (a.start_date < b.start_date ? -1 : 1)).slice(0, 5);
   const low = (stock.data || []).filter((s) => s.low).sort((a, b) => a.on_hand - b.on_hand);
   const hour = new Date().getHours();
@@ -76,9 +79,10 @@ export function StaffDashboard({ me }) {
     <>
       <PageHead title={`${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, ${me.name}`} sub="Your design jobs, upcoming events and what's running low." />
       <div className="stats">
+        <Stat label="Total earned" value={rm(earnedPaid + earnedWaiting)} sub={`${rm(earnedPaid)} paid · ${rm(earnedWaiting)} waiting`} />
+        <Stat label="Waiting for payment" value={rm(earnedWaiting)} sub={`${unpaid.length} design${unpaid.length === 1 ? '' : 's'} done, not paid yet`} />
         <Stat label="Jobs to do" value={active.length} sub={`${active.filter((d) => d.due_date && daysUntil(d.due_date) <= 3).length} due within 3 days`} />
         <Stat label="Done this month" value={doneMonth.length} sub={`${rm(doneMonth.reduce((a, d) => a + d.fee, 0))} in fees`} />
-        <Stat label="Waiting for payment" value={rm(unpaid.reduce((a, d) => a + d.fee, 0))} sub={`${unpaid.length} design${unpaid.length === 1 ? '' : 's'} done, not paid yet`} />
       </div>
 
       <div className="card">
