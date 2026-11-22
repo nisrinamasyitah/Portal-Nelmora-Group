@@ -18,12 +18,21 @@ export function FeeText({ d }) {
   return (
     <>
       {d.paid_outside && !(d.fee > 0) ? <span className="muted">Included</span> : rmFmt(d.fee)}
-      {d.paid && d.paid_date && (
-        <div className="row-note"><b>Paid {new Date(d.paid_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</b></div>
-      )}
-      {d.paid && <div className="row-note">{d.paid_note || (d.transaction_id ? 'Recorded in Cash flow (Design)' : '')}</div>}
     </>
   );
+}
+
+// Payment description, shown under the design name (event, number of designs, receipt).
+export function PaidNote({ d }) {
+  if (!d.paid) return null;
+  const text = d.paid_note || (d.transaction_id ? 'Recorded in Cash flow (Design)' : '');
+  return text ? <div className="row-note pay-note">{text}</div> : null;
+}
+
+// "Paid on" column: the date the design was paid, or a dash.
+export function PaidOn({ d }) {
+  if (!d.paid || !d.paid_date) return <span className="muted">–</span>;
+  return <b>{new Date(d.paid_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</b>;
 }
 
 // Days until a date (negative = overdue).

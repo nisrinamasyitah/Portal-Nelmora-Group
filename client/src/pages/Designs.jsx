@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { Empty, Field, FormModal, Loading, PageHead, Stat, confirmDelete, useApi } from '../components.jsx';
-import { DueText, FeeText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
+import { DueText, FeeText, PaidBadge, PaidNote, PaidOn, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
 import { rm, today } from '../utils.js';
 
 // Owner view: assign design jobs to staff, follow progress, pay fees.
@@ -122,13 +122,14 @@ export default function Designs() {
         {shown.length === 0 ? <Empty>{filter === 'open' ? 'No open design jobs. Click "+ New design job" to assign one.' : 'Nothing here.'}</Empty> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Design</th><th>Designer</th><th>Due</th><th>Status</th><th className="num">Fee</th><th /></tr></thead>
+              <thead><tr><th>Design</th><th>Designer</th><th>Due</th><th>Status</th><th className="num">Fee</th><th className="nowrap">Paid on</th><th /></tr></thead>
               <tbody>
                 {shown.map((d) => (
                   <tr key={d.id}>
                     <td>
                       <b>{d.title}</b>
-                      {d.event_name && <div className="row-note">For {d.event_name}</div>}
+                      {d.event_name && !d.paid_note && <div className="row-note">For {d.event_name}</div>}
+                      <PaidNote d={d} />
                       {d.file_link && <div className="row-note"><a href={d.file_link} target="_blank" rel="noopener noreferrer">Open file ↗</a></div>}
                       {d.staff_note && <div className="row-note">Note: {d.staff_note}</div>}
                     </td>
@@ -136,6 +137,7 @@ export default function Designs() {
                     <td className="nowrap"><DueText date={d.due_date} done={d.status === 'done'} /></td>
                     <td className="nowrap"><StatusBadge status={d.status} /> <PaidBadge d={d} /></td>
                     <td className="num"><FeeText d={d} /></td>
+                    <td className="nowrap"><PaidOn d={d} /></td>
                     <td className="right nowrap">
                       {d.status === 'done' && !d.paid && <button className="link" onClick={() => setModal({ t: 'pay', d })}>Pay</button>}
                       {d.paid && <button className="link" onClick={async () => (await confirmDelete(d.paid_outside ? 'Mark this design as not paid?' : 'Undo this payment? The "Design" entry is removed from Cash flow.', () => api(`/designs/${d.id}/unpay`, { method: 'POST' }))) && designs.reload()}>Undo pay</button>}
