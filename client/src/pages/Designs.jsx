@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { Empty, Field, FormModal, Loading, PageHead, Stat, confirmDelete, useApi } from '../components.jsx';
-import { DueText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
+import { DueText, FeeText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge } from '../designs.jsx';
 import { rm, today } from '../utils.js';
 
 // Owner view: assign design jobs to staff, follow progress, pay fees.
@@ -10,7 +10,9 @@ function DesignModal({ design, users, events, feeNow, onClose }) {
     ? { ...design, event_id: design.event_id || '', assignee_id: design.assignee_id || '', due_date: design.due_date || '' }
     : { title: '', brief: '', event_id: '', assignee_id: users.find((u) => u.active)?.id || '', due_date: '', fee: feeNow, status: 'todo', file_link: '' });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const outside = !!f.paid_on && !design?.transaction_id;
   const body = { title: f.title, brief: f.brief, event_id: f.event_id, assignee_id: f.assignee_id, due_date: f.due_date, status: f.status, file_link: f.file_link, fee: f.fee };
+  if (!design?.transaction_id) { body.paid_on = f.paid_on || ''; body.paid_note = f.paid_on ? f.paid_note || '' : ''; }
   const save = () => (design ? api(`/designs/${design.id}`, { method: 'PUT', body }) : api('/designs', { method: 'POST', body }));
   return (
     <FormModal title={design ? 'Edit design job' : 'New design job'} onClose={onClose} onSave={save} wide>
@@ -42,6 +44,20 @@ function DesignModal({ design, users, events, feeNow, onClose }) {
         )}
         {design && <Field label="File link"><input value={f.file_link || ''} onChange={(e) => set('file_link', e.target.value)} placeholder="https://…" /></Field>}
       </div>
+      {!design?.transaction_id && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={outside} onChange={(e) => setF((x) => ({ ...x, paid_on: e.target.checked ? today() : '', paid_note: e.target.checked ? x.paid_note : '' }))} />
+            <span>Already paid outside the portal (the money is already in Cash flow, e.g. inside a worker payment). <b>No new cash entry.</b></span>
+          </label>
+          {outside && (
+            <div className="row">
+              <Field label="Paid on"><input type="date" value={f.paid_on} onChange={(e) => set('paid_on', e.target.value)} required /></Field>
+              <Field label="How it was paid"><input value={f.paid_note || ''} onChange={(e) => set('paid_note', e.target.value)} placeholder="e.g. Included in RM320 (0001)" /></Field>
+            </div>
+          )}
+        </>
+      )}
       {design?.staff_note && <p className="small"><b>Note from {design.assignee_name || 'designer'}:</b> {design.staff_note}</p>}
     </FormModal>
   );
@@ -109,10 +125,10 @@ export default function Designs() {
                     <td>{d.assignee_name || <span className="muted">Not assigned</span>}</td>
                     <td className="nowrap"><DueText date={d.due_date} done={d.status === 'done'} /></td>
                     <td className="nowrap"><StatusBadge status={d.status} /> <PaidBadge d={d} /></td>
-                    <td className="num">{rm(d.fee)}{d.paid && <div className="row-note">paid {d.paid_date}</div>}</td>
+                    <td className="num"><FeeText d={d} /></td>
                     <td className="right nowrap">
                       {d.status === 'done' && !d.paid && <button className="link" onClick={() => setModal({ t: 'pay', d })}>Pay</button>}
-                      {d.paid && <button className="link" onClick={async () => (await confirmDelete('Undo this payment? The "Design" entry is removed from Cash flow.', () => api(`/designs/${d.id}/unpay`, { method: 'POST' }))) && designs.reload()}>Undo pay</button>}
+                      {d.paid && <button className="link" onClick={async () => (await confirmDelete(d.paid_outside ? 'Mark this design as not paid?' : 'Undo this payment? The "Design" entry is removed from Cash flow.', () => api(`/designs/${d.id}/unpay`, { method: 'POST' }))) && designs.reload()}>Undo pay</button>}
                       <button className="link" onClick={() => setModal({ t: 'edit', d })}>Edit</button>
                       {!d.paid && <button className="link danger" onClick={async () => (await confirmDelete(`Delete "${d.title}"?`, () => api(`/designs/${d.id}`, { method: 'DELETE' }))) && designs.reload()}>Delete</button>}
                     </td>

@@ -460,7 +460,7 @@ app.get('/api/staff/events', wrap((_req, res) => {
 // ---------------------------------------------------------------- design jobs
 const designFee = () => { const s = getSettings(); return r2((Number(s.design_fee_base) || 0) * (1 + (Number(s.design_fee_pct) || 0) / 100)); };
 const DESIGN_SQL = `
-  SELECT d.*, u.name AS assignee_name, e.name AS event_name, e.start_date AS event_date, t.date AS paid_date
+  SELECT d.*, u.name AS assignee_name, e.name AS event_name, e.start_date AS event_date, COALESCE(t.date, d.paid_on) AS paid_date, (d.transaction_id IS NULL AND d.paid_on IS NOT NULL) AS paid_outside
   FROM designs d
   LEFT JOIN users u ON u.id = d.assignee_id
   LEFT JOIN events e ON e.id = d.event_id
@@ -472,27 +472,32 @@ app.get('/api/designs', wrap((req, res) => {
     : db.prepare(`${DESIGN_SQL} WHERE d.assignee_id = ? ORDER BY d.status = 'done', d.due_date IS NULL, d.due_date, d.id DESC`).all(req.user.id);
   res.json({ fee_now: designFee(), rows: rows.map((r) => ({ ...r, paid: !!r.paid_date })) });
 }));
-const DESIGN_OWNER = { title: 'text', brief: 'text', event_id: 'id', assignee_id: 'id', due_date: 'text', status: 'text', file_link: 'text', fee: 'num' };
+// paid_on / paid_note: "already paid outside the portal" (no cash entry is made; the money is already in cash flow).
+const DESIGN_OWNER = { title: 'text', brief: 'text', event_id: 'id', assignee_id: 'id', due_date: 'text', status: 'text', file_link: 'text', fee: 'num', done_date: 'text', paid_on: 'text', paid_note: 'text' };
 const DESIGN_STAFF = { status: 'text', file_link: 'text', staff_note: 'text' };
 function cleanDesign(d) {
   if (d.due_date !== undefined) { if (d.due_date && !isDate(d.due_date)) throw bad('due_date must be a date (YYYY-MM-DD)'); d.due_date = d.due_date || null; }
   if (d.status !== undefined && !STATUSES.includes(d.status)) throw bad('status must be todo, doing or done');
   if (d.file_link && !/^https?:\/\//i.test(d.file_link)) throw bad('File link must start with https://');
   if (d.fee !== undefined && d.fee < 0) throw bad('fee cannot be negative');
+  for (const k of ['done_date', 'paid_on']) {
+    if (d[k] !== undefined) { if (d[k] && !isDate(d[k])) throw bad(`${k} must be a date (YYYY-MM-DD)`); d[k] = d[k] || null; }
+  }
   return d;
 }
 app.post('/api/designs', wrap((req, res) => {
   ownerOnly(req);
   const d = cleanDesign(pick(req.body, DESIGN_OWNER)); need(d, ['title']);
   if (d.fee === undefined) d.fee = designFee();
-  if (d.status === 'done') d.done_date = new Date().toLocaleDateString('en-CA');
+  if (d.status === 'done' && !d.done_date) d.done_date = new Date().toLocaleDateString('en-CA');
   res.json(insert('designs', d));
 }));
 app.put('/api/designs/:id', wrap((req, res) => {
   const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
   if (!cur || (req.user.role !== 'owner' && cur.assignee_id !== req.user.id)) throw Object.assign(new Error('Not found'), { status: 404 });
   const d = cleanDesign(pick(req.body, req.user.role === 'owner' ? { ...DESIGN_OWNER, staff_note: 'text' } : DESIGN_STAFF));
-  if (d.status && d.status !== cur.status) d.done_date = d.status === 'done' ? new Date().toLocaleDateString('en-CA') : null;
+  if (d.status && d.status !== cur.status && d.done_date === undefined) d.done_date = d.status === 'done' ? new Date().toLocaleDateString('en-CA') : null;
+  if (d.paid_on && cur.transaction_id) throw bad('This design is already paid through Cash flow.');
   if (cur.transaction_id && d.fee !== undefined && d.fee !== cur.fee) throw bad('This design is already paid. Undo the payment before changing the fee.');
   res.json(update('designs', cur.id, d));
 }));
@@ -515,7 +520,7 @@ app.post('/api/designs/:id/unpay', wrap((req, res) => {
   const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
   if (!cur) throw Object.assign(new Error('Not found'), { status: 404 });
   db.transaction(() => {
-    update('designs', cur.id, { transaction_id: null });
+    update('designs', cur.id, { transaction_id: null, paid_on: null, paid_note: '' });
     if (cur.transaction_id) db.prepare('DELETE FROM transactions WHERE id = ?').run(cur.transaction_id);
   })();
   res.json({ ok: true });

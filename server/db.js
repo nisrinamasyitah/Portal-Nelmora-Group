@@ -165,6 +165,11 @@ function prepare(d) {
   // Migration: scent notes per product (from the catalog)
   const productCols = new Set(d.prepare('PRAGMA table_info(products)').all().map((c) => c.name));
   if (!productCols.has('notes')) d.exec("ALTER TABLE products ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+  // Migration: a design can be marked paid outside the portal (money already in cash flow elsewhere,
+  // e.g. inside a worker payment), so no new cash entry is made.
+  const designCols = new Set(d.prepare('PRAGMA table_info(designs)').all().map((c) => c.name));
+  if (!designCols.has('paid_on')) d.exec('ALTER TABLE designs ADD COLUMN paid_on TEXT');
+  if (!designCols.has('paid_note')) d.exec("ALTER TABLE designs ADD COLUMN paid_note TEXT NOT NULL DEFAULT ''");
 
   const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');
   const put = d.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');

@@ -12,6 +12,17 @@ export function PaidBadge({ d }) {
   return null;
 }
 
+// Fee cell: designs paid inside another payment (no separate fee) show "Included".
+export function FeeText({ d }) {
+  const rmFmt = (n) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <>
+      {d.paid_outside && !(d.fee > 0) ? <span className="muted">Included</span> : rmFmt(d.fee)}
+      {d.paid_note ? <div className="row-note">{d.paid_note}</div> : d.paid && d.paid_date ? <div className="row-note">paid {d.paid_date}</div> : null}
+    </>
+  );
+}
+
 // Days until a date (negative = overdue).
 export const daysUntil = (date) => (date ? Math.round((new Date(date + 'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null);
 

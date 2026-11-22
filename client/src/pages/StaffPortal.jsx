@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { Empty, Field, FormModal, Loading, PageHead, Stat, useApi } from '../components.jsx';
-import { DueText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge, daysUntil } from '../designs.jsx';
+import { DueText, FeeText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge, daysUntil } from '../designs.jsx';
 import { fmtDate, rm, today } from '../utils.js';
 
 const shortName = (n) => n.replace(/ \((10|30)ml\)$/, '');
@@ -47,7 +47,7 @@ function JobList({ rows, onOpen, empty }) {
               </td>
               <td className="nowrap"><DueText date={d.due_date} done={d.status === 'done'} /></td>
               <td className="nowrap"><StatusBadge status={d.status} /> <PaidBadge d={d} /></td>
-              <td className="num">{rm(d.fee)}</td>
+              <td className="num"><FeeText d={d} /></td>
               <td className="right"><button className="link" onClick={() => onOpen(d)}>Update</button></td>
             </tr>
           ))}
@@ -135,7 +135,7 @@ export function MyDesigns() {
     <>
       <PageHead title="My designs" sub={`Fee per design: ${rm(designs.data.fee_now)}. Mark a job Done and add the file link when it's finished.`} />
       <div className="stats">
-        <Stat label="Total paid to you" value={rm(paid)} />
+        <Stat label="Total paid to you" value={rm(paid)} sub={(() => { const n = rows.filter((d) => d.paid_outside && !(d.fee > 0)).length; return n ? `+ ${n} design${n === 1 ? '' : 's'} paid inside another payment` : undefined; })()} />
         <Stat label="Waiting for payment" value={rm(unpaid)} />
         <Stat label="Designs done" value={rows.filter((d) => d.status === 'done').length} />
       </div>
