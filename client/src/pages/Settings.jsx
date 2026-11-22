@@ -27,10 +27,10 @@ function FontPicker() {
 
 // Staff logins. A designer sees only her design jobs and fees, stock counts, event dates and scent notes.
 function StaffModal({ user, onClose }) {
-  const [f, setF] = useState(user ? { name: user.name, email: user.email, password: '', active: !!user.active } : { name: '', email: '', password: '', active: true });
+  const [f, setF] = useState(user ? { name: user.name, email: user.email, notify_email: user.notify_email || '', password: '', active: !!user.active } : { name: '', email: '', notify_email: '', password: '', active: true });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = () => {
-    const body = { name: f.name, email: f.email, active: f.active };
+    const body = { name: f.name, email: f.email, notify_email: f.notify_email, active: f.active };
     if (f.password) body.password = f.password;
     return user ? api(`/users/${user.id}`, { method: 'PUT', body }) : api('/users', { method: 'POST', body: { ...body, password: f.password } });
   };
@@ -38,6 +38,9 @@ function StaffModal({ user, onClose }) {
     <FormModal title={user ? `Edit ${user.name}` : 'Add staff account'} onClose={onClose} onSave={save}>
       <Field label="Name"><input value={f.name} onChange={(e) => set('name', e.target.value)} required autoFocus placeholder="e.g. Amira" /></Field>
       <Field label="Email (her sign-in)"><input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} required autoComplete="off" /></Field>
+      <Field label="Notification email" hint="New design jobs are emailed here (e.g. her Gmail). Leave blank to use her sign-in email.">
+        <input type="email" value={f.notify_email} onChange={(e) => set('notify_email', e.target.value)} placeholder="e.g. name@gmail.com" autoComplete="off" />
+      </Field>
       <Field label={user ? 'New password (leave blank to keep)' : 'Password'} hint="At least 8 characters. Give it to her in person; she can change it after signing in.">
         <input type="text" value={f.password} onChange={(e) => set('password', e.target.value)} required={!user} minLength={8} autoComplete="new-password" />
       </Field>
@@ -59,7 +62,7 @@ function StaffAccounts() {
           <tbody>
             {users.data.map((u) => (
               <tr key={u.id} style={u.active ? undefined : { opacity: 0.55 }}>
-                <td><b>{u.name}</b><div className="muted small">{u.email}</div></td>
+                <td><b>{u.name}</b><div className="muted small">{u.email}</div>{u.notify_email && <div className="muted small">Job emails → {u.notify_email}</div>}</td>
                 <td>Designer{!u.active && <span className="badge" style={{ marginLeft: 6 }}>locked</span>}</td>
                 <td className="right"><button className="link" onClick={() => setModal({ user: u })}>Edit</button></td>
               </tr>

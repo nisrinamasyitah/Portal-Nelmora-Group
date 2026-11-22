@@ -13,6 +13,7 @@ import serverless from 'serverless-http';
 import { getStore } from '@netlify/blobs';
 import app from '../../server/app.js';
 import dbModule from '../../server/db.js';
+import mailModule from '../../server/mail.js';
 
 process.env.TZ = 'Asia/Kuala_Lumpur'; // dates like "today" follow Malaysia time, same as on your computer
 
@@ -105,6 +106,7 @@ async function loginGuard(ip, attempt) {
 }
 
 export default async (req, context) => {
+  mailModule.clearMail(); // nothing left over from an earlier request
   // Sign-in attempts go through the guard. The database is loaded (staff accounts live there) but never saved.
   if (req.method === 'POST' && /\/api\/login$/.test(new URL(req.url).pathname)) {
     const ip = clientIp(req, context);
@@ -126,7 +128,7 @@ export default async (req, context) => {
   const reply = () => new Response(res.status === 204 || res.status === 304 ? null : res.body, { status: res.status, headers: res.headers });
 
   // 3. Save changes. Reads (GET) don't change anything.
-  if (req.method === 'GET' || req.method === 'HEAD' || res.status >= 400) return reply();
+  if (req.method === 'GET' || req.method === 'HEAD' || res.status >= 400) { mailModule.clearMail(); return reply(); }
 
   const today = new Date().toLocaleDateString('en-CA');
   if (original) await blobs.set(`backups/${today}.db`, toArrayBuffer(original), { onlyIfNew: true });
@@ -137,7 +139,8 @@ export default async (req, context) => {
     : await blobs.set(KEY, toArrayBuffer(buf), { onlyIfNew: true });
 
   // Someone else saved a change at the same moment: don't overwrite it.
-  if (!write.modified) return json(409, { error: 'Someone else saved a change at the same time. Please refresh and try again.' });
+  if (!write.modified) { mailModule.clearMail(); return json(409, { error: 'Someone else saved a change at the same time. Please refresh and try again.' }); }
+  await mailModule.flushMail(); // e.g. "new design job" emails, only now that the change is saved
   return reply();
 };
 

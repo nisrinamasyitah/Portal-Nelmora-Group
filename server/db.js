@@ -170,6 +170,9 @@ function prepare(d) {
   const designCols = new Set(d.prepare('PRAGMA table_info(designs)').all().map((c) => c.name));
   if (!designCols.has('paid_on')) d.exec('ALTER TABLE designs ADD COLUMN paid_on TEXT');
   if (!designCols.has('paid_note')) d.exec("ALTER TABLE designs ADD COLUMN paid_note TEXT NOT NULL DEFAULT ''");
+  // Migration: where a staff member gets job notifications (can differ from her sign-in email).
+  const userCols = new Set(d.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+  if (!userCols.has('notify_email')) d.exec("ALTER TABLE users ADD COLUMN notify_email TEXT NOT NULL DEFAULT ''");
 
   const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');
   const put = d.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');

@@ -5,7 +5,7 @@ import { DueText, FeeText, PaidBadge, STATUS, STATUS_ORDER, StatusBadge } from '
 import { rm, today } from '../utils.js';
 
 // Owner view: assign design jobs to staff, follow progress, pay fees.
-function DesignModal({ design, users, events, feeNow, onClose }) {
+function DesignModal({ design, users, events, feeNow, onClose, onEmail }) {
   const [f, setF] = useState(design
     ? { ...design, event_id: design.event_id || '', assignee_id: design.assignee_id || '', due_date: design.due_date || '' }
     : { title: '', brief: '', event_id: '', assignee_id: users.find((u) => u.active)?.id || '', due_date: '', fee: feeNow, status: 'todo', file_link: '' });
@@ -13,7 +13,10 @@ function DesignModal({ design, users, events, feeNow, onClose }) {
   const outside = !!f.paid_on && !design?.transaction_id;
   const body = { title: f.title, brief: f.brief, event_id: f.event_id, assignee_id: f.assignee_id, due_date: f.due_date, status: f.status, file_link: f.file_link, fee: f.fee };
   if (!design?.transaction_id) { body.paid_on = f.paid_on || ''; body.paid_note = f.paid_on ? f.paid_note || '' : ''; }
-  const save = () => (design ? api(`/designs/${design.id}`, { method: 'PUT', body }) : api('/designs', { method: 'POST', body }));
+  const save = async () => {
+    const r = await (design ? api(`/designs/${design.id}`, { method: 'PUT', body }) : api('/designs', { method: 'POST', body }));
+    onEmail?.(r.email ? { ...r.email, title: r.title } : null);
+  };
   return (
     <FormModal title={design ? 'Edit design job' : 'New design job'} onClose={onClose} onSave={save} wide>
       <Field label="What to design"><input value={f.title} onChange={(e) => set('title', e.target.value)} required autoFocus placeholder="e.g. Poster for People Market 7–8 Nov" /></Field>
@@ -80,6 +83,7 @@ export default function Designs() {
   const events = useApi('/events');
   const [filter, setFilter] = useState('open');
   const [modal, setModal] = useState(null);
+  const [emailNote, setEmailNote] = useState(null);
   const close = (saved) => { setModal(null); if (saved) designs.reload(); };
 
   if (!designs.data || !users.data) return <Loading state={designs.data ? users : designs} />;
@@ -95,6 +99,12 @@ export default function Designs() {
       <PageHead title="Designs" sub="Poster and artwork jobs for your designer. You assign; she updates progress and adds the file link.">
         <button className="primary" onClick={() => setModal({ t: 'edit' })}>+ New design job</button>
       </PageHead>
+      {emailNote && (
+        <div className={emailNote.sent ? 'notice ok' : 'notice'}>
+          {emailNote.sent ? <>Email "NELMORA NEW JOB" sent to <b>{emailNote.to}</b> for "{emailNote.title}".</> : <>Job saved, but no email was sent: {emailNote.reason}</>}
+          <button className="link" style={{ marginLeft: 8 }} onClick={() => setEmailNote(null)}>Close</button>
+        </div>
+      )}
       {noStaff && <div className="notice">No staff account yet. Add your designer in <b>Settings → Staff accounts</b> so she can sign in and see her jobs.</div>}
 
       <div className="stats">
@@ -140,7 +150,7 @@ export default function Designs() {
         )}
       </div>
 
-      {modal?.t === 'edit' && <DesignModal design={modal.d} users={users.data} events={events.data || []} feeNow={designs.data.fee_now} onClose={close} />}
+      {modal?.t === 'edit' && <DesignModal design={modal.d} users={users.data} events={events.data || []} feeNow={designs.data.fee_now} onClose={close} onEmail={setEmailNote} />}
       {modal?.t === 'pay' && <PayModal design={modal.d} onClose={close} />}
     </>
   );

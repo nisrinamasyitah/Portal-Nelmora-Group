@@ -7,9 +7,16 @@ const crypto = require('crypto');
 const express = require('express');
 const { db, getSettings, restoreDatabase } = require('./db');
 const { compute, agentRate, r2 } = require('./calc');
+const { queueMail, flushMail, clearMail, configured: mailConfigured, newJobMail } = require('./mail');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+// On your computer the database is saved straight away, so queued emails go out once the reply is sent.
+// (On Netlify the function sends them after saving the database instead.)
+app.use((_req, res, next) => {
+  if (app.locals.sendMailAfterResponse) res.on('finish', () => { if (res.statusCode < 400) flushMail(); else clearMail(); });
+  next();
+});
 
 // ---------------------------------------------------------------- auth (optional)
 // Set PORTAL_PASSWORD in .env to require a login. Leave empty for local-only use.
@@ -410,12 +417,18 @@ app.get('/api/backup', wrap((_req, res) => {
 }));
 
 // ---------------------------------------------------------------- staff accounts (owner only)
-const userOut = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created: u.created });
+const userOut = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created: u.created, notify_email: u.notify_email || '' });
 const checkNewPassword = (pw) => { if (String(pw || '').length < 8) throw bad('Password must be at least 8 characters'); };
+const cleanNotify = (d) => {
+  if (d.notify_email === undefined) return;
+  d.notify_email = d.notify_email.toLowerCase();
+  if (d.notify_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.notify_email)) throw bad('Enter a valid notification email (or leave it blank)');
+};
 app.get('/api/users', wrap((_req, res) => res.json(db.prepare('SELECT * FROM users ORDER BY active DESC, name').all().map(userOut))));
 app.post('/api/users', wrap((req, res) => {
   ownerOnly(req);
-  const d = pick(req.body, { name: 'text', email: 'text' }); need(d, ['name', 'email']);
+  const d = pick(req.body, { name: 'text', email: 'text', notify_email: 'text' }); need(d, ['name', 'email']);
+  cleanNotify(d);
   d.email = d.email.toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) throw bad('Enter a valid email address');
   if (EMAIL && d.email === EMAIL) throw bad('That is the owner email. Use a different email for staff.');
@@ -425,7 +438,8 @@ app.post('/api/users', wrap((req, res) => {
 }));
 app.put('/api/users/:id', wrap((req, res) => {
   ownerOnly(req);
-  const d = pick(req.body, { name: 'text', email: 'text', active: 'bool' });
+  const d = pick(req.body, { name: 'text', email: 'text', active: 'bool', notify_email: 'text' });
+  cleanNotify(d);
   if (d.email !== undefined) {
     d.email = d.email.toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) throw bad('Enter a valid email address');
@@ -490,8 +504,21 @@ app.post('/api/designs', wrap((req, res) => {
   const d = cleanDesign(pick(req.body, DESIGN_OWNER)); need(d, ['title']);
   if (d.fee === undefined) d.fee = designFee();
   if (d.status === 'done' && !d.done_date) d.done_date = new Date().toLocaleDateString('en-CA');
-  res.json(insert('designs', d));
+  const row = insert('designs', d);
+  res.json({ ...row, email: notifyAssignee(row) });
 }));
+// Email the designer when an open job is assigned to her ("NELMORA NEW JOB AMIRA !").
+// The email goes out only after the change is saved. Returns what happened, for the owner's screen.
+function notifyAssignee(design) {
+  if (!design.assignee_id || design.status === 'done') return null;
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(design.assignee_id);
+  if (!u || !u.active) return null;
+  const to = u.notify_email || u.email;
+  if (!mailConfigured()) return { sent: false, to, reason: 'Email sending is not set up yet (SMTP settings).' };
+  const event = design.event_id ? db.prepare('SELECT name FROM events WHERE id = ?').get(design.event_id) : null;
+  queueMail(newJobMail({ to, name: u.name, design: { ...design, event_name: event?.name } }));
+  return { sent: true, to };
+}
 app.put('/api/designs/:id', wrap((req, res) => {
   const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
   if (!cur || (req.user.role !== 'owner' && cur.assignee_id !== req.user.id)) throw Object.assign(new Error('Not found'), { status: 404 });
@@ -499,7 +526,10 @@ app.put('/api/designs/:id', wrap((req, res) => {
   if (d.status && d.status !== cur.status && d.done_date === undefined) d.done_date = d.status === 'done' ? new Date().toLocaleDateString('en-CA') : null;
   if (d.paid_on && cur.transaction_id) throw bad('This design is already paid through Cash flow.');
   if (cur.transaction_id && d.fee !== undefined && d.fee !== cur.fee) throw bad('This design is already paid. Undo the payment before changing the fee.');
-  res.json(update('designs', cur.id, d));
+  const row = update('designs', cur.id, d);
+  // Re-assigned to someone new → tell the new designer.
+  const email = req.user.role === 'owner' && row.assignee_id && row.assignee_id !== cur.assignee_id ? notifyAssignee(row) : null;
+  res.json({ ...row, email });
 }));
 // Pay: adds a "Design" cash-out entry (shows in Cash flow and Monthly report as a cost).
 app.post('/api/designs/:id/pay', wrap((req, res) => {

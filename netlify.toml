@@ -13,10 +13,10 @@
 [functions]
   node_bundler = "esbuild"
   # Copied as-is instead of bundled (better-sqlite3 has a compiled part built for Netlify's servers).
-  external_node_modules = ["better-sqlite3", "express"]
-  # better-sqlite3 is loaded in a way the packager can't follow, so include its folder explicitly
-  # (it contains the ready-made SQLite engine for Linux in prebuilds/).
-  included_files = ["node_modules/better-sqlite3/**"]
+  external_node_modules = ["better-sqlite3", "express", "nodemailer"]
+  # The packager can't follow how these are loaded, so include their folders explicitly
+  # (better-sqlite3 contains the ready-made SQLite engine for Linux in prebuilds/; nodemailer sends job emails).
+  included_files = ["node_modules/better-sqlite3/**", "node_modules/nodemailer/**"]
 
 # API calls (/api/*) go to the function; its path is set inside netlify/functions/api.mjs.
 
