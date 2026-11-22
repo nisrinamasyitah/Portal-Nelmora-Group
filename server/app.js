@@ -480,10 +480,15 @@ const DESIGN_SQL = `
   LEFT JOIN events e ON e.id = d.event_id
   LEFT JOIN transactions t ON t.id = d.transaction_id`;
 const STATUSES = ['todo', 'doing', 'done'];
+// Order: open jobs first (soonest due on top), then finished ones newest → oldest by their event date
+// (or, without an event, the date paid / finished / created).
+const DESIGN_ORDER = `ORDER BY d.status = 'done',
+  CASE WHEN d.status != 'done' THEN COALESCE(d.due_date, '9999') END,
+  COALESCE(e.start_date, t.date, d.paid_on, d.done_date, d.created) DESC, d.id DESC`;
 app.get('/api/designs', wrap((req, res) => {
   const rows = req.user.role === 'owner'
-    ? db.prepare(`${DESIGN_SQL} ORDER BY d.status = 'done', d.due_date IS NULL, d.due_date, d.id DESC`).all()
-    : db.prepare(`${DESIGN_SQL} WHERE d.assignee_id = ? ORDER BY d.status = 'done', d.due_date IS NULL, d.due_date, d.id DESC`).all(req.user.id);
+    ? db.prepare(`${DESIGN_SQL} ${DESIGN_ORDER}`).all()
+    : db.prepare(`${DESIGN_SQL} WHERE d.assignee_id = ? ${DESIGN_ORDER}`).all(req.user.id);
   res.json({ fee_now: designFee(), rows: rows.map((r) => ({ ...r, paid: !!r.paid_date })) });
 }));
 // paid_on / paid_note: "already paid outside the portal" (no cash entry is made; the money is already in cash flow).
