@@ -171,7 +171,7 @@ function Sidebar({ nav, who, onLogout, sub = 'Business portal' }) {
   );
 }
 
-function Shell({ onLogout }) {
+function Shell({ onLogout, who }) {
   return (
     <div className="app">
       <aside className="side">
@@ -188,7 +188,7 @@ function Shell({ onLogout }) {
         ))}
         <div className="spacer" />
         <div className="foot">
-          <span className="who">{(onLogout && localStorage.getItem('nelmora_email')) || `© ${new Date().getFullYear()} Nelmora`}</span>
+          <span className="who">{who || `© ${new Date().getFullYear()} Nelmora`}</span>
           {onLogout && <button onClick={onLogout}>Log out</button>}
         </div>
       </aside>
@@ -264,5 +264,5 @@ export default function App() {
   if (!me) return <p className="muted" style={{ padding: 20 }}>Loading…</p>;
   const logout = auth.data?.required ? () => { setToken(''); setLoggedIn(false); } : null;
   if (me.role !== 'owner') return <StaffShell me={me} onLogout={logout} />;
-  return <Shell onLogout={logout} />;
+  return <Shell onLogout={logout} who={me.name} />;
 }

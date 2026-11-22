@@ -59,7 +59,9 @@ function readToken(t) {
   if (Date.now() - Number(start) > MAX_SESSION_MS) return null; // signed in more than 12 hours ago
   return { exp: Number(exp), start: Number(start), uid: Number(uid) };
 }
-const OWNER = { id: 0, role: 'owner', name: 'Owner', email: EMAIL };
+// Owner's display name: OWNER_NAME, or the first part of PORTAL_EMAIL (nisrina@… → "Nisrina").
+const ownerName = (process.env.OWNER_NAME || '').trim() || (EMAIL ? EMAIL.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Owner');
+const OWNER = { id: 0, role: 'owner', name: ownerName, email: EMAIL };
 
 // Business data (and login replies) must never be cached by browsers or proxies.
 app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
