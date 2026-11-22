@@ -187,11 +187,44 @@ function sheetReport(id, depth = 0) {
   };
 }
 
+// Perfume cost page: cost per bottle in every costing sheet, and every production / restock in them.
+function perfumeCost() {
+  const c = compute();
+  const sheets = db.prepare('SELECT * FROM costing_sheets ORDER BY code').all();
+  const rows = [], prod = [];
+  for (const sh of sheets) {
+    const r = sheetReport(sh.id);
+    const L = Object.fromEntries(r.lines.map((l) => [l.size, l]));
+    rows.push({ code: sh.code, title: sh.title, event_name: r.sheet.event_name, start_date: sh.start_date, end_date: sh.end_date,
+      cost: { '30ml': L['30ml'].combined.cost, '10ml': L['10ml'].combined.cost } });
+    const end = r.sheet.end_effective;
+    for (const l of r.lines) {
+      if (!l.restock.qty) continue;
+      // Scents and dates from the stock batches in this sheet's period (restocks, not stock counts).
+      const bs = db.prepare('SELECT * FROM batches WHERE date >= ? AND date <= ? ORDER BY date, id').all(sh.start_date, end)
+        .filter((b) => c.productById.get(b.product_id)?.line === l.size && !isCount(b.note));
+      const scents = bs.filter((b) => isCatalog(c.productById.get(b.product_id))).map((b) => `${c.productById.get(b.product_id).name.replace(/ \((10|30)ml\)$/, '')} ${b.qty}`);
+      prod.push({ code: sh.code, size: l.size, date: bs[0]?.date || null, qty: l.restock.qty, cost: l.restock.cost,
+        detail: scents.length ? scents.join(', ') : l.from_sheet && !bs.length ? `From the ${sh.code} Excel sheet` : (bs[0]?.note || '').replace(/^[^:]*:\s*/, '').replace(/ \(dated on the event.*$/, '') });
+    }
+  }
+  // "Cost per bottle now" = the latest sheet that has a cost for that size.
+  const now = ['30ml', '10ml'].map((size) => {
+    const last = [...rows].reverse().find((x) => x.cost[size] > 0);
+    const prices = c.products.filter((p) => p.active && p.line === size).map((p) => p.price);
+    const price = prices.length ? prices.sort((a, b) => prices.filter((x) => x === b).length - prices.filter((x) => x === a).length)[0] : 0;
+    const cost = last?.cost[size] || 0;
+    return { line: size, cost, from: last ? `${last.code} · ${last.title}` : null, price, profit: r2(price - cost), margin_pct: price ? r2(((price - cost) / price) * 100) : 0 };
+  });
+  return { now, sheets: rows, production: prod };
+}
+
 // ---------------------------------------------------------------- routes (owner only; staff are blocked in app.js)
 function mount(app, h) {
   const { wrap, bad, pick, need, insert, update, remove, isDate } = h;
   const notFound = () => Object.assign(new Error('Not found'), { status: 404 });
 
+  app.get('/api/perfume-cost', wrap((_req, res) => res.json(perfumeCost())));
   app.get('/api/costing', wrap((_req, res) => {
     const rows = db.prepare('SELECT * FROM costing_sheets ORDER BY start_date DESC, id DESC').all();
     res.json({ next_code: nextCode(), rows: rows.map((s) => { const r = sheetReport(s.id); return { ...r.sheet, result: r.result, restocks: r.groups.length }; }) });
@@ -265,4 +298,4 @@ function mount(app, h) {
   }));
 }
 
-module.exports = { mount, sheetReport };
+module.exports = { mount, sheetReport, perfumeCost };
