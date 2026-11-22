@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, downloadBackup, restoreBackup } from '../api.js';
-import { Field, Loading, PageHead, useApi } from '../components.jsx';
+import { Field, FormModal, Loading, PageHead, useApi } from '../components.jsx';
 import { FONTS, applyFont, getFont, loadFont } from '../fonts.js';
 
 function FontPicker() {
@@ -21,6 +21,53 @@ function FontPicker() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Staff logins. A designer sees only her design jobs and fees, stock counts, event dates and scent notes.
+function StaffModal({ user, onClose }) {
+  const [f, setF] = useState(user ? { name: user.name, email: user.email, password: '', active: !!user.active } : { name: '', email: '', password: '', active: true });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const save = () => {
+    const body = { name: f.name, email: f.email, active: f.active };
+    if (f.password) body.password = f.password;
+    return user ? api(`/users/${user.id}`, { method: 'PUT', body }) : api('/users', { method: 'POST', body: { ...body, password: f.password } });
+  };
+  return (
+    <FormModal title={user ? `Edit ${user.name}` : 'Add staff account'} onClose={onClose} onSave={save}>
+      <Field label="Name"><input value={f.name} onChange={(e) => set('name', e.target.value)} required autoFocus placeholder="e.g. Amira" /></Field>
+      <Field label="Email (her sign-in)"><input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} required autoComplete="off" /></Field>
+      <Field label={user ? 'New password (leave blank to keep)' : 'Password'} hint="At least 8 characters. Give it to her in person; she can change it after signing in.">
+        <input type="text" value={f.password} onChange={(e) => set('password', e.target.value)} required={!user} minLength={8} autoComplete="new-password" />
+      </Field>
+      {user && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => set('active', e.target.checked)} /> Can sign in (untick to lock her out straight away)</label>}
+      <p className="muted small" style={{ marginTop: 10 }}>Role: <b>Designer</b>. Sees her design jobs and fees, stock counts, event dates and scent notes. Never sees cash flow, sales, costs or profit.</p>
+    </FormModal>
+  );
+}
+
+function StaffAccounts() {
+  const users = useApi('/users');
+  const [modal, setModal] = useState(null);
+  const close = (saved) => { setModal(null); if (saved) users.reload(); };
+  return (
+    <div className="card" style={{ maxWidth: 640 }}>
+      <h2>Staff accounts <button onClick={() => setModal({})}>+ Add staff</button></h2>
+      {!users.data ? <Loading state={users} /> : users.data.length === 0 ? <p className="muted">No staff yet. Add your designer so she can sign in with her own email and password.</p> : (
+        <table className="compact">
+          <tbody>
+            {users.data.map((u) => (
+              <tr key={u.id} style={u.active ? undefined : { opacity: 0.55 }}>
+                <td><b>{u.name}</b><div className="muted small">{u.email}</div></td>
+                <td>Designer{!u.active && <span className="badge" style={{ marginLeft: 6 }}>locked</span>}</td>
+                <td className="right"><button className="link" onClick={() => setModal({ user: u })}>Edit</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {modal && <StaffModal user={modal.user} onClose={close} />}
     </div>
   );
 }
@@ -80,6 +127,11 @@ export default function Settings({ onLogout }) {
           <Field label="Default booth commission (RM / bottle)"><input type="number" step="0.01" min="0" value={f.default_commission} onChange={(e) => set('default_commission', e.target.value)} /></Field>
         </div>
 
+        <div className="row">
+          <Field label="Design fee (RM per design)" hint="Pre-filled for new design jobs. Each job keeps its own fee."><input type="number" step="0.01" min="0" value={f.design_fee_base ?? 20} onChange={(e) => set('design_fee_base', e.target.value)} /></Field>
+          <Field label="Plus (%)" hint={`= RM ${((Number(f.design_fee_base ?? 20) || 0) * (1 + (Number(f.design_fee_pct ?? 6) || 0) / 100)).toFixed(2)} per design`}><input type="number" step="0.01" min="0" value={f.design_fee_pct ?? 6} onChange={(e) => set('design_fee_pct', e.target.value)} /></Field>
+        </div>
+
         <Field label="Agent commission tiers" hint="Per bottle, based on the agent's total bottles on one date. Below the lowest tier = no commission.">
           {f.agent_tiers.map((t, i) => (
             <div key={i} className="row" style={{ gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', marginBottom: 6 }}>
@@ -93,6 +145,8 @@ export default function Settings({ onLogout }) {
 
         <button className="primary">Save settings</button>
       </form>
+
+      <StaffAccounts />
 
       <div className="card" style={{ maxWidth: 640 }}>
         <h2>Backup</h2>

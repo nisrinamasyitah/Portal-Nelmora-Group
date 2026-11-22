@@ -12,6 +12,8 @@ import Sales from './pages/Sales.jsx';
 import Agents from './pages/Agents.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
+import Designs from './pages/Designs.jsx';
+import { MyAccount, MyDesigns, StaffDashboard, StaffEvents, StaffStock } from './pages/StaffPortal.jsx';
 
 function Login({ onDone, askEmail, notice }) {
   const [email, setEmail] = useState(() => localStorage.getItem('nelmora_email') || '');
@@ -83,6 +85,8 @@ const ICONS = {
   cost: 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01',
   sales: 'M3 3v18h18M7 15l4-4 3 3 6-6',
   agents: 'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+  design: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.59 7.59M11 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 };
 
@@ -104,11 +108,68 @@ const NAV = [
     ['/events', 'Events', 'events'],
     ['/sales', 'Sales', 'sales'],
     ['/agents', 'Agents', 'agents'],
+    ['/designs', 'Designs', 'design'],
   ]],
   ['Account', [
     ['/settings', 'Settings', 'settings'],
   ]],
 ];
+
+// Staff (designer) menu: no cash flow, sales, costs or profit anywhere.
+const STAFF_NAV = [
+  ['My work', [
+    ['/', 'My dashboard', 'dashboard'],
+    ['/designs', 'My designs', 'design'],
+  ]],
+  ['Nelmora', [
+    ['/stock', 'Stock', 'stock'],
+    ['/events', 'Events', 'events'],
+  ]],
+  ['Account', [
+    ['/account', 'My account', 'user'],
+  ]],
+];
+
+function StaffShell({ me, onLogout }) {
+  return (
+    <div className="app">
+      <Sidebar nav={STAFF_NAV} who={me.name} onLogout={onLogout} sub="Design studio" />
+      <main className="main">
+        <Routes>
+          <Route path="/" element={<StaffDashboard me={me} />} />
+          <Route path="/designs" element={<MyDesigns />} />
+          <Route path="/stock" element={<StaffStock />} />
+          <Route path="/events" element={<StaffEvents />} />
+          <Route path="/account" element={<MyAccount me={me} onLogout={onLogout} />} />
+          <Route path="*" element={<p className="muted">Page not found.</p>} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+function Sidebar({ nav, who, onLogout, sub = 'Business portal' }) {
+  return (
+    <aside className="side">
+      <div className="brand"><b>NELMORA</b><span>{sub}</span></div>
+      {nav.map(([section, items]) => (
+        <div key={section} style={{ display: 'contents' }}>
+          <div className="section">{section}</div>
+          {items.map(([to, label, icon]) => (
+            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => 'nav' + (isActive ? ' active' : '')}>
+              <Icon name={icon} />{label}
+            </NavLink>
+          ))}
+        </div>
+      ))}
+      <div className="spacer" />
+      <div className="foot">
+        <span className="who">{who}</span>
+        {onLogout && <button onClick={onLogout}>Log out</button>}
+      </div>
+    </aside>
+  );
+}
 
 function Shell({ onLogout }) {
   return (
@@ -141,6 +202,7 @@ function Shell({ onLogout }) {
           <Route path="/events/:id" element={<EventDetail />} />
           <Route path="/sales" element={<Sales />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/designs" element={<Designs />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings onLogout={onLogout} />} />
           <Route path="*" element={<p className="muted">Page not found.</p>} />
@@ -188,8 +250,19 @@ export default function App() {
     return () => window.removeEventListener('nelmora-unauth', onUnauth);
   }, []);
 
+  // Who is signed in: the owner sees everything; staff get their own portal.
+  const [me, setMe] = useState(null);
+  const signedIn = !!auth.data && (!auth.data.required || loggedIn);
+  useEffect(() => {
+    if (!signedIn) { setMe(null); return; }
+    api('/me').then(setMe).catch(() => setMe(null));
+  }, [signedIn]);
+
   if (auth.loading && !auth.data) return <p className="muted" style={{ padding: 20 }}>Loading…</p>;
   if (auth.error) return <div className="error" style={{ margin: 20 }}>Cannot reach the server: {auth.error}. Is it running? (npm run dev)</div>;
   if (auth.data?.required && !loggedIn) return <Login askEmail={auth.data.email} notice={idleOut ? 'You were logged out after 5 minutes of no activity.' : ''} onDone={() => { markActivity(); setIdleOut(false); setLoggedIn(true); }} />;
-  return <Shell onLogout={auth.data?.required ? () => { setToken(''); setLoggedIn(false); } : null} />;
+  if (!me) return <p className="muted" style={{ padding: 20 }}>Loading…</p>;
+  const logout = auth.data?.required ? () => { setToken(''); setLoggedIn(false); } : null;
+  if (me.role !== 'owner') return <StaffShell me={me} onLogout={logout} />;
+  return <Shell onLogout={logout} />;
 }

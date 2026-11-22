@@ -100,6 +100,38 @@ CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
 CREATE INDEX IF NOT EXISTS idx_batches_product ON batches(product_id);
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
+
+-- Staff logins (the owner logs in with PORTAL_EMAIL / PORTAL_PASSWORD instead).
+-- role 'designer' sees only: her design jobs and fees, stock counts, event dates, scent notes.
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  role TEXT NOT NULL DEFAULT 'designer',
+  pw_hash TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created TEXT NOT NULL DEFAULT (date('now'))
+);
+
+-- Design jobs (posters etc.). The owner assigns them; the designer updates status and file link.
+-- fee is fixed when the job is created (default RM20 + 6%), so changing the default later doesn't rewrite old jobs.
+-- Paying a job adds a "Design" cash-out entry (transaction_id); deleting that entry makes the job unpaid again.
+CREATE TABLE IF NOT EXISTS designs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  brief TEXT DEFAULT '',
+  event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+  assignee_id INTEGER REFERENCES users(id),
+  due_date TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',      -- todo | doing | done
+  file_link TEXT DEFAULT '',
+  staff_note TEXT DEFAULT '',
+  fee REAL NOT NULL DEFAULT 0,
+  created TEXT NOT NULL DEFAULT (date('now')),
+  done_date TEXT,
+  transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_designs_assignee ON designs(assignee_id);
 `;
 
 const DEFAULT_SETTINGS = {
@@ -108,6 +140,8 @@ const DEFAULT_SETTINGS = {
   opening_cash_date: '', // '' = opening cash is from before the first entry
   default_daily_wage: 100,
   default_commission: 3,
+  design_fee_base: 20,  // RM per design
+  design_fee_pct: 6,    // % added on top of the base (RM20 + 6% = RM21.20)
   agent_tiers: [
     { min: 10, rate: 1.5 },
     { min: 20, rate: 2 },

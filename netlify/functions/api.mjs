@@ -105,11 +105,12 @@ async function loginGuard(ip, attempt) {
 }
 
 export default async (req, context) => {
-  // Sign-in attempts go through the guard (the database isn't needed to check a password).
+  // Sign-in attempts go through the guard. The database is loaded (staff accounts live there) but never saved.
   if (req.method === 'POST' && /\/api\/login$/.test(new URL(req.url).pathname)) {
     const ip = clientIp(req, context);
     return loginGuard(ip, async () => {
-      useDatabase(openFromBuffer(null));
+      const { saved } = await load();
+      useDatabase(openFromBuffer(saved ? Buffer.from(saved.data) : null));
       const res = await runPortal(req, ip);
       return new Response(res.body, { status: res.status, headers: res.headers });
     });

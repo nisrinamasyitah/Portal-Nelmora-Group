@@ -389,3 +389,17 @@ tr.current td { background: var(--wine-50); font-weight: 600; }
   .login .box h1 { font-size: 26px; }
   .login-sub { margin-bottom: 22px; }
 }
+
+/* ---------- design jobs ---------- */
+.badge.status-todo { background: #f1ebe8; color: #5a474b; }
+.badge.status-doing { background: var(--warn-bg); color: var(--warn); }
+.badge.status-done { background: #e5f0ea; color: var(--pos); }
+.badge.paid { background: #e5f0ea; color: var(--pos); }
+.badge.unpaid { background: #fbe8ec; color: var(--neg); }
+.warn-text { color: var(--warn); }
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.plain-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.plain-list li:last-child { border-bottom: none; }
+.brief { background: var(--wine-50); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13.5px; }
+.brief p { margin: 4px 0 0; white-space: pre-wrap; }
+textarea { width: 100%; resize: vertical; font: inherit; }

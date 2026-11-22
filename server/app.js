@@ -23,24 +23,37 @@ const safeEq = (a, b) => {
   const y = crypto.createHash('sha256').update(String(b)).digest();
   return crypto.timingSafeEqual(x, y);
 };
-// Login token = "<expires>.<signed-in at>.<signature>".
+// Staff passwords are stored as scrypt hashes ("scrypt$<salt>$<hash>"), never as plain text.
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  return `scrypt$${salt.toString('hex')}$${crypto.scryptSync(String(pw), salt, 32).toString('hex')}`;
+}
+function checkPassword(pw, stored) {
+  const [, salt, hash] = String(stored || '').split('$');
+  if (!salt || !hash) { crypto.scryptSync(String(pw), 'x', 32); return false; } // same work either way
+  return crypto.timingSafeEqual(crypto.scryptSync(String(pw), Buffer.from(salt, 'hex'), 32), Buffer.from(hash, 'hex'));
+}
+
+// Login token = "<expires>.<signed-in at>.<user>.<signature>"; user 0 = owner, otherwise a staff account id.
 // - Expires 6 minutes after the last activity (the browser logs out at 5 minutes idle; the extra minute
 //   is slack). While the portal is in use, every API reply carries a fresh token (X-New-Token header).
 // - However active, a login lasts at most 12 hours from signing in; then sign in again.
 const IDLE_MS = 6 * 60 * 1000;
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
-function makeToken(start = Date.now()) {
+function makeToken(uid, start = Date.now()) {
   const exp = String(Math.min(Date.now() + IDLE_MS, start + MAX_SESSION_MS));
-  const payload = `${exp}.${start}`;
+  const payload = `${exp}.${start}.${uid}`;
   return `${payload}.${sign(payload)}`;
 }
 function readToken(t) {
-  const [exp, start, sig] = String(t || '').split('.');
-  if (!exp || !start || !sig || !safeEq(sig, sign(`${exp}.${start}`))) return null;
+  const [exp, start, uid, sig] = String(t || '').split('.');
+  if (!exp || !start || !uid || !sig || !safeEq(sig, sign(`${exp}.${start}.${uid}`))) return null;
   if (!(Number(exp) > Date.now())) return null;
   if (Date.now() - Number(start) > MAX_SESSION_MS) return null; // signed in more than 12 hours ago
-  return { exp: Number(exp), start: Number(start) };
+  return { exp: Number(exp), start: Number(start), uid: Number(uid) };
 }
+const OWNER = { id: 0, role: 'owner', name: 'Owner', email: EMAIL };
+
 // Business data (and login replies) must never be cached by browsers or proxies.
 app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 const failures = new Map(); // brute-force guard on your computer (Netlify adds a shared one in the function)
@@ -48,27 +61,55 @@ app.post('/api/login', (req, res) => {
   const ip = req.ip;
   const f = failures.get(ip) || { n: 0, until: 0 };
   if (f.until > Date.now()) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
-  const emailOk = !EMAIL || safeEq(String(req.body.email || '').trim().toLowerCase(), EMAIL);
-  const passOk = safeEq(req.body.password || '', PASSWORD);
-  if (!PASSWORD || (emailOk && passOk)) {
-    failures.delete(ip);
-    return res.json({ token: makeToken() });
-  }
+  if (!PASSWORD) return res.json({ token: makeToken(0) });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const pw = String(req.body.password || '');
+  // Owner: PORTAL_EMAIL / PORTAL_PASSWORD
+  if ((!EMAIL || safeEq(email, EMAIL)) && safeEq(pw, PASSWORD)) { failures.delete(ip); return res.json({ token: makeToken(0) }); }
+  // Staff: their own account (checked even when the email is unknown, so timing gives nothing away)
+  const user = email ? db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(email) : null;
+  if (checkPassword(pw, user?.pw_hash) && user) { failures.delete(ip); return res.json({ token: makeToken(user.id) }); }
   f.n += 1;
   if (f.n >= 5) { f.until = Date.now() + 15 * 60_000; f.n = 0; }
   failures.set(ip, f);
-  res.status(401).json({ error: EMAIL ? 'Incorrect email or password' : 'Wrong password' });
+  res.status(401).json({ error: 'Incorrect email or password' });
 });
-app.get('/api/auth-required', (_req, res) => res.json({ required: !!PASSWORD, email: !!EMAIL }));
+app.get('/api/auth-required', (_req, res) => res.json({ required: !!PASSWORD, email: true }));
 app.use('/api', (req, res, next) => {
-  if (!PASSWORD) return next();
+  if (!PASSWORD) { req.user = OWNER; return next(); }
   const t = readToken((req.headers.authorization || '').replace('Bearer ', ''));
   if (!t) return res.status(401).json({ error: 'Login required' });
-  res.setHeader('X-New-Token', makeToken(t.start)); // activity keeps the login alive (up to 12 hours)
+  if (t.uid === 0) req.user = OWNER;
+  else {
+    // Checked on every request, so deactivating a staff account locks them out straight away.
+    const u = db.prepare('SELECT id, name, email, role, active FROM users WHERE id = ?').get(t.uid);
+    if (!u || !u.active) return res.status(401).json({ error: 'Login required' });
+    req.user = u;
+  }
+  res.setHeader('X-New-Token', makeToken(t.uid, t.start)); // activity keeps the login alive (up to 12 hours)
   next();
 });
+
+// Staff (designer) accounts may only use these routes. Everything else (cash flow, sales, events'
+// money, settings, backup, ...) answers 403. This is the real protection; the menu just hides links.
+const STAFF_ROUTES = [
+  ['GET', /^\/api\/(ping|me)$/],
+  ['POST', /^\/api\/me\/password$/],
+  ['GET', /^\/api\/staff\/(stock|events)$/],
+  ['GET', /^\/api\/designs$/],
+  ['PUT', /^\/api\/designs\/\d+$/],
+];
+app.use('/api', (req, res, next) => {
+  if (req.user.role === 'owner') return next();
+  const p = (req.baseUrl + req.path).replace(/\/+$/, '');
+  if (STAFF_ROUTES.some(([m, re]) => m === req.method && re.test(p))) return next();
+  res.status(403).json({ error: 'This part of the portal is not available for your account.' });
+});
+const ownerOnly = (req) => { if (req.user.role !== 'owner') throw Object.assign(new Error('Only the owner can do this.'), { status: 403 }); };
+
 // Called by the browser every minute while someone is using the portal, to keep the login alive.
 app.get('/api/ping', (_req, res) => res.json({ ok: true }));
+app.get('/api/me', (req, res) => res.json({ id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role }));
 
 // ---------------------------------------------------------------- helpers
 const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -122,6 +163,8 @@ app.put('/api/settings', wrap((req, res) => {
     opening_cash_date: (v) => { if (v && !isDate(v)) throw bad('opening_cash_date must be a date'); return v || ''; },
     default_daily_wage: (v) => Number(v) || 0,
     default_commission: (v) => Number(v) || 0,
+    design_fee_base: (v) => Math.max(0, Number(v) || 0),
+    design_fee_pct: (v) => Math.max(0, Number(v) || 0),
     agent_tiers: (v) => {
       if (!Array.isArray(v)) throw bad('agent_tiers must be a list');
       return v.map((t) => ({ min: Math.round(Number(t.min)), rate: Number(t.rate) })).filter((t) => t.min > 0 && t.rate >= 0);
@@ -364,6 +407,125 @@ app.get('/api/backup', wrap((_req, res) => {
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="nelmora-backup-${new Date().toLocaleDateString('en-CA')}.db"`);
   res.send(buf);
+}));
+
+// ---------------------------------------------------------------- staff accounts (owner only)
+const userOut = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created: u.created });
+const checkNewPassword = (pw) => { if (String(pw || '').length < 8) throw bad('Password must be at least 8 characters'); };
+app.get('/api/users', wrap((_req, res) => res.json(db.prepare('SELECT * FROM users ORDER BY active DESC, name').all().map(userOut))));
+app.post('/api/users', wrap((req, res) => {
+  ownerOnly(req);
+  const d = pick(req.body, { name: 'text', email: 'text' }); need(d, ['name', 'email']);
+  d.email = d.email.toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) throw bad('Enter a valid email address');
+  if (EMAIL && d.email === EMAIL) throw bad('That is the owner email. Use a different email for staff.');
+  checkNewPassword(req.body.password);
+  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(d.email)) throw bad('A staff account with this email already exists');
+  res.json(userOut(insert('users', { ...d, role: 'designer', pw_hash: hashPassword(req.body.password) })));
+}));
+app.put('/api/users/:id', wrap((req, res) => {
+  ownerOnly(req);
+  const d = pick(req.body, { name: 'text', email: 'text', active: 'bool' });
+  if (d.email !== undefined) {
+    d.email = d.email.toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) throw bad('Enter a valid email address');
+    if (EMAIL && d.email === EMAIL) throw bad('That is the owner email. Use a different email for staff.');
+  }
+  if (req.body.password) { checkNewPassword(req.body.password); d.pw_hash = hashPassword(req.body.password); }
+  res.json(userOut(update('users', req.params.id, d)));
+}));
+
+// Staff change their own password.
+app.post('/api/me/password', wrap((req, res) => {
+  if (req.user.role === 'owner') throw bad('The owner password is set in .env / Netlify (PORTAL_PASSWORD).');
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!checkPassword(req.body.current || '', u.pw_hash)) throw bad('Current password is wrong');
+  checkNewPassword(req.body.next);
+  update('users', u.id, { pw_hash: hashPassword(req.body.next) });
+  res.json({ ok: true });
+}));
+
+// ---------------------------------------------------------------- staff views (no money at all)
+// Stock: bottles on hand per scent, low warning, scent notes. No cost, value or sold numbers.
+app.get('/api/staff/stock', wrap((_req, res) => {
+  res.json(compute().stock.filter((p) => p.active && (p.gender === 'Men' || p.gender === 'Women')).map((p) => ({
+    id: p.id, name: p.name, line: p.line, gender: p.gender, notes: p.notes, on_hand: Math.max(p.on_hand, 0), low: p.low, last_date: p.last_date,
+  })));
+}));
+// Events: name, location and dates only. No costs, sales or profit.
+app.get('/api/staff/events', wrap((_req, res) => {
+  res.json(db.prepare('SELECT id, name, location, start_date, end_date FROM events ORDER BY start_date DESC').all());
+}));
+
+// ---------------------------------------------------------------- design jobs
+const designFee = () => { const s = getSettings(); return r2((Number(s.design_fee_base) || 0) * (1 + (Number(s.design_fee_pct) || 0) / 100)); };
+const DESIGN_SQL = `
+  SELECT d.*, u.name AS assignee_name, e.name AS event_name, e.start_date AS event_date, t.date AS paid_date
+  FROM designs d
+  LEFT JOIN users u ON u.id = d.assignee_id
+  LEFT JOIN events e ON e.id = d.event_id
+  LEFT JOIN transactions t ON t.id = d.transaction_id`;
+const STATUSES = ['todo', 'doing', 'done'];
+app.get('/api/designs', wrap((req, res) => {
+  const rows = req.user.role === 'owner'
+    ? db.prepare(`${DESIGN_SQL} ORDER BY d.status = 'done', d.due_date IS NULL, d.due_date, d.id DESC`).all()
+    : db.prepare(`${DESIGN_SQL} WHERE d.assignee_id = ? ORDER BY d.status = 'done', d.due_date IS NULL, d.due_date, d.id DESC`).all(req.user.id);
+  res.json({ fee_now: designFee(), rows: rows.map((r) => ({ ...r, paid: !!r.paid_date })) });
+}));
+const DESIGN_OWNER = { title: 'text', brief: 'text', event_id: 'id', assignee_id: 'id', due_date: 'text', status: 'text', file_link: 'text', fee: 'num' };
+const DESIGN_STAFF = { status: 'text', file_link: 'text', staff_note: 'text' };
+function cleanDesign(d) {
+  if (d.due_date !== undefined) { if (d.due_date && !isDate(d.due_date)) throw bad('due_date must be a date (YYYY-MM-DD)'); d.due_date = d.due_date || null; }
+  if (d.status !== undefined && !STATUSES.includes(d.status)) throw bad('status must be todo, doing or done');
+  if (d.file_link && !/^https?:\/\//i.test(d.file_link)) throw bad('File link must start with https://');
+  if (d.fee !== undefined && d.fee < 0) throw bad('fee cannot be negative');
+  return d;
+}
+app.post('/api/designs', wrap((req, res) => {
+  ownerOnly(req);
+  const d = cleanDesign(pick(req.body, DESIGN_OWNER)); need(d, ['title']);
+  if (d.fee === undefined) d.fee = designFee();
+  if (d.status === 'done') d.done_date = new Date().toLocaleDateString('en-CA');
+  res.json(insert('designs', d));
+}));
+app.put('/api/designs/:id', wrap((req, res) => {
+  const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
+  if (!cur || (req.user.role !== 'owner' && cur.assignee_id !== req.user.id)) throw Object.assign(new Error('Not found'), { status: 404 });
+  const d = cleanDesign(pick(req.body, req.user.role === 'owner' ? { ...DESIGN_OWNER, staff_note: 'text' } : DESIGN_STAFF));
+  if (d.status && d.status !== cur.status) d.done_date = d.status === 'done' ? new Date().toLocaleDateString('en-CA') : null;
+  if (cur.transaction_id && d.fee !== undefined && d.fee !== cur.fee) throw bad('This design is already paid. Undo the payment before changing the fee.');
+  res.json(update('designs', cur.id, d));
+}));
+// Pay: adds a "Design" cash-out entry (shows in Cash flow and Monthly report as a cost).
+app.post('/api/designs/:id/pay', wrap((req, res) => {
+  ownerOnly(req);
+  const cur = db.prepare(`${DESIGN_SQL} WHERE d.id = ?`).get(req.params.id);
+  if (!cur) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (cur.paid_date) throw bad('Already paid');
+  if (!(cur.fee > 0)) throw bad('This design has no fee');
+  const date = isDate(req.body?.date) ? req.body.date : new Date().toLocaleDateString('en-CA');
+  db.transaction(() => {
+    const t = insert('transactions', { date, type: 'out', category: 'Design', description: `Design: ${cur.title}${cur.assignee_name ? ' (' + cur.assignee_name + ')' : ''}`, amount: cur.fee });
+    update('designs', cur.id, { transaction_id: t.id });
+  })();
+  res.json({ ok: true });
+}));
+app.post('/api/designs/:id/unpay', wrap((req, res) => {
+  ownerOnly(req);
+  const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
+  if (!cur) throw Object.assign(new Error('Not found'), { status: 404 });
+  db.transaction(() => {
+    update('designs', cur.id, { transaction_id: null });
+    if (cur.transaction_id) db.prepare('DELETE FROM transactions WHERE id = ?').run(cur.transaction_id);
+  })();
+  res.json({ ok: true });
+}));
+app.delete('/api/designs/:id', wrap((req, res) => {
+  ownerOnly(req);
+  const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
+  if (!cur) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (cur.transaction_id) throw bad('This design is paid. Undo the payment first.');
+  remove('designs', cur.id); res.json({ ok: true });
 }));
 
 // Restore: replace ALL data with an uploaded backup file (the .db from "Download backup").
