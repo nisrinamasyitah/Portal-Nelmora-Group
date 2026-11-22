@@ -230,9 +230,18 @@ function prepare(d) {
 let current = null;
 let dbPath = '(in memory)';
 
+// Change counter: goes up whenever the data may have changed (a write, or a different database).
+// calc.js uses it to reuse its results instead of recalculating everything on every call.
+let instance = 0;
+let changes = 0;
+const READ_ONLY = /^\s*(select|with|pragma\s+table_info)\b/i;
+function dbVersion() { return `${instance}.${changes}`; }
+
 const db = new Proxy({}, {
   get(_t, prop) {
     if (!current) openLocalFile();
+    if (prop === 'prepare') return (sql) => { if (!READ_ONLY.test(sql)) changes++; return current.prepare(sql); };
+    if (prop === 'exec' || prop === 'transaction') changes++;
     const v = current[prop];
     return typeof v === 'function' ? v.bind(current) : v;
   },
@@ -244,6 +253,7 @@ function openLocalFile() {
   fs.mkdirSync(dataDir, { recursive: true });
   dbPath = path.join(dataDir, 'nelmora.db');
   current = new Database(dbPath);
+  instance++;
   current.pragma('journal_mode = WAL');
   prepare(current);
   // Write recent changes from the WAL side file into nelmora.db (now and every 5 minutes),
@@ -268,7 +278,12 @@ function openFromBuffer(buf) {
 }
 
 // Netlify: use this database for the current request.
-function useDatabase(d) { if (current && current !== d) { try { current.close(); } catch { /* already closed */ } } current = d; }
+function useDatabase(d) {
+  if (current === d) return;
+  if (current) { try { current.close(); } catch { /* already closed */ } }
+  current = d;
+  instance++;
+}
 
 // Check a backup file before restoring it: it must open and have the portal's tables.
 function checkBackup(buf) {
@@ -317,5 +332,6 @@ function getSettings() {
 module.exports = {
   db,
   get dbPath() { if (!current) openLocalFile(); return dbPath; },
-  getSettings, DEFAULT_SETTINGS, openFromBuffer, useDatabase, checkBackup, restoreDatabase,
+  getSettings, DEFAULT_SETTINGS, openFromBuffer, useDatabase, checkBackup, restoreDatabase, dbVersion,
+  currentDatabase: () => current,
 };

@@ -40,6 +40,13 @@
     # Private business portal: keep it out of Google and other search engines.
     X-Robots-Tag = "noindex, nofollow"
 
+# App files have a unique name for every version (e.g. index-BaYQP8Ys.js), so browsers can keep them
+# for a year and never re-check them. index.html itself is always checked, so updates show at once.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # Local test of the Netlify setup: netlify dev
 [dev]
   framework = "#custom"

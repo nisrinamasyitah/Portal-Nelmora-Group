@@ -6,7 +6,7 @@
 //  Cash flow   : every real cash movement (sales in, stock purchases / event costs / wages /
 //                commissions / manual entries out), with a running balance.
 
-const { db, getSettings } = require('./db');
+const { db, getSettings, dbVersion } = require('./db');
 
 // Not part of profit: owner money in/out, and stock purchases (stock becomes a cost only when bottles are sold).
 const NON_OPERATING = new Set(['Capital injection', 'Owner withdrawal', 'Stock purchase']);
@@ -78,7 +78,7 @@ function planEvent(e, fixed, lineStats) {
   };
 }
 
-function compute() {
+function computeFresh() {
   const settings = getSettings();
   const products = all('SELECT * FROM products ORDER BY line DESC, name');
   const batches = all('SELECT * FROM batches');
@@ -380,6 +380,17 @@ function compute() {
     });
 
   return { settings, products, stock, sales, events: eventsOut, agents, ledger, monthly, cashBalance, batches, adjustments, productById, sheetCost };
+}
+
+// compute() is called by many routes, sometimes several times per request. Its result only changes when
+// the data changes (or the date: "upcoming" entries), so reuse it until then. Callers only read it.
+let memo = null;
+function compute() {
+  const key = `${dbVersion()}|${new Date().toLocaleDateString('en-CA')}`;
+  if (memo && memo.key === key) return memo.value;
+  const value = computeFresh();
+  memo = { key, value };
+  return value;
 }
 
 module.exports = { compute, agentRate, r2, NON_OPERATING };

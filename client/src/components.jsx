@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from './api.js';
+import { api, dataCache } from './api.js';
 
 // Loads data from the API and lets a page refresh it after saving something.
+// If this page was opened before, its last data shows straight away while fresh data loads.
 export function useApi(path) {
-  const [state, setState] = useState({ data: null, error: null, loading: true });
+  const [state, setState] = useState(() => (dataCache.has(path) ? { data: dataCache.get(path), error: null, loading: true } : { data: null, error: null, loading: true }));
   const load = useCallback(() => {
     api(path)
-      .then((data) => setState({ data, error: null, loading: false }))
+      .then((data) => { dataCache.set(path, data); setState({ data, error: null, loading: false }); })
       .catch((e) => setState((s) => ({ ...s, error: e.message, loading: false })));
   }, [path]);
   useEffect(() => {
-    setState((s) => ({ ...s, loading: true }));
+    setState(dataCache.has(path) ? { data: dataCache.get(path), error: null, loading: true } : { data: null, error: null, loading: true });
     load();
-  }, [load]);
+  }, [load, path]);
   return { ...state, reload: load };
 }
 

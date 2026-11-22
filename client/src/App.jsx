@@ -1,21 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { api, hasToken, setToken } from './api.js';
 import { useApi } from './components.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import CashFlow from './pages/CashFlow.jsx';
-import Stock from './pages/Stock.jsx';
-import PerfumeCost from './pages/PerfumeCost.jsx';
-import Events from './pages/Events.jsx';
-import EventDetail from './pages/EventDetail.jsx';
-import Sales from './pages/Sales.jsx';
-import Agents from './pages/Agents.jsx';
-import Reports from './pages/Reports.jsx';
-import Settings from './pages/Settings.jsx';
-import Designs from './pages/Designs.jsx';
-import Team from './pages/Team.jsx';
-import Costing, { CostingSheet } from './pages/Costing.jsx';
-import { MyAccount, MyDesigns, StaffDashboard, StaffEvents, StaffStock } from './pages/StaffPortal.jsx';
+// Pages load only when opened (smaller first download; the charts library is only fetched for
+// Dashboard, Cash flow and Reports).
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const CashFlow = lazy(() => import('./pages/CashFlow.jsx'));
+const Stock = lazy(() => import('./pages/Stock.jsx'));
+const PerfumeCost = lazy(() => import('./pages/PerfumeCost.jsx'));
+const Events = lazy(() => import('./pages/Events.jsx'));
+const EventDetail = lazy(() => import('./pages/EventDetail.jsx'));
+const Sales = lazy(() => import('./pages/Sales.jsx'));
+const Agents = lazy(() => import('./pages/Agents.jsx'));
+const Reports = lazy(() => import('./pages/Reports.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Designs = lazy(() => import('./pages/Designs.jsx'));
+const Team = lazy(() => import('./pages/Team.jsx'));
+const Costing = lazy(() => import('./pages/Costing.jsx'));
+const CostingSheet = lazy(() => import('./pages/Costing.jsx').then((m) => ({ default: m.CostingSheet })));
+const staff = () => import('./pages/StaffPortal.jsx');
+const StaffDashboard = lazy(() => staff().then((m) => ({ default: m.StaffDashboard })));
+const MyDesigns = lazy(() => staff().then((m) => ({ default: m.MyDesigns })));
+const StaffStock = lazy(() => staff().then((m) => ({ default: m.StaffStock })));
+const StaffEvents = lazy(() => staff().then((m) => ({ default: m.StaffEvents })));
+const MyAccount = lazy(() => staff().then((m) => ({ default: m.MyAccount })));
+
+const PageLoading = () => <p className="muted page-loading">Loading…</p>;
 
 function Login({ onDone, askEmail, notice }) {
   const [email, setEmail] = useState(() => localStorage.getItem('nelmora_email') || '');
@@ -140,6 +150,7 @@ function StaffShell({ me, onLogout }) {
     <div className="app">
       <Sidebar nav={STAFF_NAV} who={me.name} onLogout={onLogout} sub="Design studio" />
       <main className="main">
+        <Suspense fallback={<PageLoading />}>
         <Routes>
           <Route path="/" element={<StaffDashboard me={me} />} />
           <Route path="/designs" element={<MyDesigns />} />
@@ -148,6 +159,7 @@ function StaffShell({ me, onLogout }) {
           <Route path="/account" element={<MyAccount me={me} onLogout={onLogout} />} />
           <Route path="*" element={<p className="muted">Page not found.</p>} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   );
@@ -198,6 +210,7 @@ function Shell({ onLogout, who, me }) {
         </div>
       </aside>
       <main className="main">
+        <Suspense fallback={<PageLoading />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/cashflow" element={<CashFlow />} />
@@ -215,6 +228,7 @@ function Shell({ onLogout, who, me }) {
           <Route path="/settings" element={<Settings onLogout={onLogout} />} />
           <Route path="*" element={<p className="muted">Page not found.</p>} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   );

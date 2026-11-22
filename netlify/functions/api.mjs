@@ -17,7 +17,7 @@ import mailModule from '../../server/mail.js';
 
 process.env.TZ = 'Asia/Kuala_Lumpur'; // dates like "today" follow Malaysia time, same as on your computer
 
-const { db, openFromBuffer, useDatabase } = dbModule;
+const { db, openFromBuffer, useDatabase, currentDatabase } = dbModule;
 const KEY = 'nelmora.db';
 const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 
@@ -36,7 +36,22 @@ async function withStore(fn) {
     return fn(store());
   }
 }
-const load = () => withStore(async (blobs) => ({ blobs, saved: await blobs.getWithMetadata(KEY, { type: 'arrayBuffer' }) }));
+// Speed: keep the opened database in memory between requests ("warm"). Each request only asks Blobs
+// whether it changed (sending our version tag); if not (304), nothing is downloaded or re-opened, and
+// calc.js's saved results are reused too. Any change by anyone gives a new tag, so data is never stale.
+let warm = null; // { etag, db }
+function openCurrent() {
+  return withStore(async (blobs) => {
+    const got = await blobs.getWithMetadata(KEY, { type: 'arrayBuffer', ...(warm?.etag ? { etag: warm.etag } : {}) });
+    if (got && got.data === null && warm && got.etag === warm.etag) { useDatabase(warm.db); return { blobs, etag: warm.etag }; }
+    const d = openFromBuffer(got ? Buffer.from(got.data) : null);
+    useDatabase(d);
+    warm = { etag: got?.etag || null, db: d };
+    return { blobs, etag: warm.etag };
+  });
+}
+// After saving: remember the saved version so the next request can reuse it.
+const keepWarm = (etag) => { warm = etag ? { etag, db: currentDatabase() } : null; };
 
 // Run the Express portal for a web Request (via serverless-http's event format).
 const outer = express();
@@ -110,42 +125,49 @@ export default async (req, context) => {
   // Sign-in attempts go through the guard. The database is loaded (staff accounts live there) but never saved.
   if (req.method === 'POST' && /\/api\/login$/.test(new URL(req.url).pathname)) {
     const ip = clientIp(req, context);
+    const opening = openCurrent(); // load the database while the guard is checked (in parallel)
+    opening.catch(() => {});
     return loginGuard(ip, async () => {
-      const { blobs, saved } = await load();
-      useDatabase(openFromBuffer(saved ? Buffer.from(saved.data) : null));
+      const { blobs, etag } = await opening;
       const res = await runPortal(req, ip);
       // A staff sign-in records "last sign-in" for the owner's Team page. Save it, but never let
       // a save problem block the sign-in itself (it is only an activity note).
-      if (res.status === 200 && res.headers.get('x-db-changed') && saved?.etag) {
-        try { await blobs.set(KEY, toArrayBuffer(db.serialize()), { onlyIfMatch: saved.etag }); } catch (e) { console.warn('last sign-in not saved:', e.message); }
+      if (res.headers.get('x-db-changed')) {
+        try {
+          const w = res.status === 200 && etag ? await blobs.set(KEY, toArrayBuffer(db.serialize()), { onlyIfMatch: etag }) : null;
+          keepWarm(w?.modified ? w.etag : null);
+        } catch (e) { console.warn('last sign-in not saved:', e.message); keepWarm(null); }
       }
       res.headers.delete('x-db-changed');
       return new Response(res.body, { status: res.status, headers: res.headers });
     });
   }
 
-  // 1. Load the database (a new, empty one the very first time).
-  const { blobs, saved } = await load();
-  const original = saved ? Buffer.from(saved.data) : null;
-  useDatabase(openFromBuffer(original));
+  // 1. Load the database (reused from memory when unchanged; a new, empty one the very first time).
+  const { blobs, etag } = await openCurrent();
+  const isRead = req.method === 'GET' || req.method === 'HEAD';
+  const original = !isRead && etag ? db.serialize() : null; // for the daily backup, before anything changes
 
   // 2. Run the portal.
-  const res = await runPortal(req, clientIp(req, context));
+  let res;
+  try { res = await runPortal(req, clientIp(req, context)); } catch (e) { keepWarm(null); throw e; }
   const reply = () => new Response(res.status === 204 || res.status === 304 ? null : res.body, { status: res.status, headers: res.headers });
 
   // 3. Save changes. Reads (GET) don't change anything.
-  if (req.method === 'GET' || req.method === 'HEAD' || res.status >= 400) { mailModule.clearMail(); return reply(); }
+  if (isRead) { mailModule.clearMail(); return reply(); }
+  if (res.status >= 400) { mailModule.clearMail(); keepWarm(null); return reply(); } // nothing saved: reload next time
 
   const today = new Date().toLocaleDateString('en-CA');
   if (original) await blobs.set(`backups/${today}.db`, toArrayBuffer(original), { onlyIfNew: true });
 
   const buf = db.serialize();
-  const write = saved?.etag
-    ? await blobs.set(KEY, toArrayBuffer(buf), { onlyIfMatch: saved.etag })
+  const write = etag
+    ? await blobs.set(KEY, toArrayBuffer(buf), { onlyIfMatch: etag })
     : await blobs.set(KEY, toArrayBuffer(buf), { onlyIfNew: true });
 
   // Someone else saved a change at the same moment: don't overwrite it.
-  if (!write.modified) { mailModule.clearMail(); return json(409, { error: 'Someone else saved a change at the same time. Please refresh and try again.' }); }
+  if (!write.modified) { mailModule.clearMail(); keepWarm(null); return json(409, { error: 'Someone else saved a change at the same time. Please refresh and try again.' }); }
+  keepWarm(write.etag);
   await mailModule.flushMail(); // e.g. "new design job" emails, only now that the change is saved
   return reply();
 };
