@@ -627,6 +627,9 @@ app.delete('/api/designs/:id', wrap((req, res) => {
   remove('designs', cur.id); res.json({ ok: true });
 }));
 
+// ---------------------------------------------------------------- costing sheets (server/costing.js)
+require('./costing').mount(app, { wrap, bad, pick, need, insert, update, remove, isDate });
+
 // Restore: replace ALL data with an uploaded backup file (the .db from "Download backup").
 app.post('/api/restore', express.raw({ type: '*/*', limit: '20mb' }), wrap((req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) throw bad('Choose a backup file (.db) to upload.');

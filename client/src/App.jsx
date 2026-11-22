@@ -14,6 +14,7 @@ import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 import Designs from './pages/Designs.jsx';
 import Team from './pages/Team.jsx';
+import Costing, { CostingSheet } from './pages/Costing.jsx';
 import { MyAccount, MyDesigns, StaffDashboard, StaffEvents, StaffStock } from './pages/StaffPortal.jsx';
 
 function Login({ onDone, askEmail, notice }) {
@@ -87,6 +88,7 @@ const ICONS = {
   sales: 'M3 3v18h18M7 15l4-4 3 3 6-6',
   agents: 'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   design: 'M12 19l7-7 3 3-7 7-3-3zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5zM2 2l7.59 7.59M11 13a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  sheet: 'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18',
   user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
 };
@@ -105,6 +107,7 @@ const NAV = [
   ]],
   ['Operations', [
     ['/stock', 'Stock', 'stock'],
+    ['/costing', 'Costing', 'sheet'],
     ['/perfume-cost', 'Perfume cost', 'cost'],
     ['/events', 'Events', 'events'],
     ['/sales', 'Sales', 'sales'],
@@ -206,6 +209,8 @@ function Shell({ onLogout, who, me }) {
           <Route path="/agents" element={<Agents />} />
           <Route path="/designs" element={<Designs />} />
           <Route path="/team" element={<Team me={me} />} />
+          <Route path="/costing" element={<Costing />} />
+          <Route path="/costing/:id" element={<CostingSheet />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings onLogout={onLogout} />} />
           <Route path="*" element={<p className="muted">Page not found.</p>} />

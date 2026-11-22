@@ -422,3 +422,32 @@ table.details td:first-child { width: 150px; }
 .staff-card.frozen .staff-stats > div { background: #fbf0f2; }
 .owner-card { border-left: 4px solid var(--wine-700); }
 button.danger-bg { background: var(--neg); border-color: var(--neg); color: #fff; }
+
+/* ---------- costing sheets ---------- */
+.sheet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+.sheet-grid + .card, .card + .sheet-grid, .sheet-grid + .sheet-grid { margin-top: 20px; }
+.sheet-grid > .card { margin-top: 0; }
+.sheet-section h2 > span { display: inline-flex; align-items: center; gap: 10px; }
+.sheet-n { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; background: var(--wine-700); color: #fff; font-size: 13px; font-weight: 700; }
+.sheet-table { width: 100%; }
+.sheet-table tfoot td { background: #fbf3e6; }
+.sheet-table input { padding: 6px 8px; font-size: 13.5px; }
+.sheet-table input.num { text-align: right; }
+.sheet-table tr.current td { background: #fbf3e6; font-weight: 600; }
+.sheet-sub { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+.sheet-kpi { background: var(--wine-50); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.sheet-kpi b { font-size: 18px; }
+.restock-group { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 12px; }
+.restock-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.restock-head .link { margin-left: auto; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.result-cell { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.result-cell span { font-size: 12px; color: var(--muted); }
+.result-cell b { font-size: 19px; }
+.result-cell small { color: var(--muted); font-size: 11.5px; }
+.result-cell.key { background: #e8f2ec; border-color: #cfe5d8; }
+.scent-qty { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 14px; }
+.scent-qty label { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+.scent-qty input { width: 72px; text-align: right; padding: 6px 8px; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--wine-50); }

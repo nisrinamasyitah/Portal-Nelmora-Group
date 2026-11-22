@@ -132,6 +132,32 @@ CREATE TABLE IF NOT EXISTS designs (
   transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_designs_assignee ON designs(assignee_id);
+
+-- Costing sheets (like the Excel costing sheets 0001, 0002 ...): a period with or without an event.
+-- Leftover stock, restocks, sales, costs and the stock ledger for the period are worked out from the data.
+CREATE TABLE IF NOT EXISTS costing_sheets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL,                       -- e.g. 0007
+  title TEXT NOT NULL,                      -- e.g. Direct selling (Nov 2026)
+  start_date TEXT NOT NULL,
+  end_date TEXT,                            -- empty = still running (until today)
+  event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+  note TEXT DEFAULT '',
+  created TEXT NOT NULL DEFAULT (date('now'))
+);
+
+-- A restock entered on a costing sheet: the parts (like section 2 of the sheet) and the cost per bottle.
+-- Its bottles are normal stock batches (batches.group_id), so Stock and Cash flow stay in step.
+CREATE TABLE IF NOT EXISTS restock_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sheet_id INTEGER REFERENCES costing_sheets(id) ON DELETE SET NULL,
+  date TEXT NOT NULL,
+  size TEXT NOT NULL,                       -- 30ml | 10ml
+  parts TEXT NOT NULL DEFAULT '[]',         -- JSON [{name, cost, qty}]
+  unit_cost REAL NOT NULL,
+  supplier TEXT DEFAULT '',
+  cash_paid INTEGER NOT NULL DEFAULT 1
+);
 `;
 
 const DEFAULT_SETTINGS = {
@@ -177,6 +203,11 @@ function prepare(d) {
   // Migration: staff account control (last sign-in, when the owner froze the account).
   if (!userCols.has('last_login')) d.exec('ALTER TABLE users ADD COLUMN last_login TEXT');
   if (!userCols.has('frozen_at')) d.exec('ALTER TABLE users ADD COLUMN frozen_at TEXT');
+  // Migration: costing sheets — restock batches belong to a restock group; sheet costs are cash entries with a sheet.
+  const batchCols = new Set(d.prepare('PRAGMA table_info(batches)').all().map((c) => c.name));
+  if (!batchCols.has('group_id')) d.exec('ALTER TABLE batches ADD COLUMN group_id INTEGER REFERENCES restock_groups(id) ON DELETE SET NULL');
+  const txCols = new Set(d.prepare('PRAGMA table_info(transactions)').all().map((c) => c.name));
+  if (!txCols.has('sheet_id')) d.exec('ALTER TABLE transactions ADD COLUMN sheet_id INTEGER REFERENCES costing_sheets(id) ON DELETE SET NULL');
 
   const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');
   const put = d.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
