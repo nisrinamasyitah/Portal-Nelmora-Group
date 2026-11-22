@@ -480,11 +480,11 @@ const DESIGN_SQL = `
   LEFT JOIN events e ON e.id = d.event_id
   LEFT JOIN transactions t ON t.id = d.transaction_id`;
 const STATUSES = ['todo', 'doing', 'done'];
-// Order: open jobs first (soonest due on top), then finished ones newest → oldest by their event date
-// (or, without an event, the date paid / finished / created).
+// Order: open jobs first (soonest due on top), then finished ones newest → oldest by the date paid
+// (not paid yet: the event date, else the date finished / created) — matches the "Paid on" column.
 const DESIGN_ORDER = `ORDER BY d.status = 'done',
   CASE WHEN d.status != 'done' THEN COALESCE(d.due_date, '9999') END,
-  COALESCE(e.start_date, t.date, d.paid_on, d.done_date, d.created) DESC, d.id DESC`;
+  COALESCE(t.date, d.paid_on, e.start_date, d.done_date, d.created) DESC, d.id DESC`;
 app.get('/api/designs', wrap((req, res) => {
   const rows = req.user.role === 'owner'
     ? db.prepare(`${DESIGN_SQL} ${DESIGN_ORDER}`).all()
