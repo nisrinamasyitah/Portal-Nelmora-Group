@@ -142,6 +142,7 @@ const DEFAULT_SETTINGS = {
   default_commission: 3,
   design_fee_base: 20,  // RM per design
   design_fee_pct: 6,    // % added on top of the base (RM20 + 6% = RM21.20)
+  owner_notify_email: 'nelmoragroup@gmail.com', // where staff updates (status, file link, note) are emailed
   agent_tiers: [
     { min: 10, rate: 1.5 },
     { min: 20, rate: 2 },

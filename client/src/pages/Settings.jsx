@@ -86,6 +86,10 @@ export default function Settings({ onLogout }) {
           <Field label="Plus (%)" hint={`= RM ${((Number(f.design_fee_base ?? 20) || 0) * (1 + (Number(f.design_fee_pct ?? 6) || 0) / 100)).toFixed(2)} per design`}><input type="number" step="0.01" min="0" value={f.design_fee_pct ?? 6} onChange={(e) => set('design_fee_pct', e.target.value)} /></Field>
         </div>
 
+        <Field label="Your email for staff updates" hint="When a designer changes a job's status, adds the file link or leaves a note, it's emailed here. Default: nelmoragroup@gmail.com.">
+          <input type="email" value={f.owner_notify_email || ''} onChange={(e) => set('owner_notify_email', e.target.value)} placeholder="e.g. nelmoragroup@gmail.com" style={{ maxWidth: 360 }} />
+        </Field>
+
         <Field label="Agent commission tiers" hint="Per bottle, based on the agent's total bottles on one date. Below the lowest tier = no commission.">
           {f.agent_tiers.map((t, i) => (
             <div key={i} className="row" style={{ gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', marginBottom: 6 }}>

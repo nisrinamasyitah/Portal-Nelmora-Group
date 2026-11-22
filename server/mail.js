@@ -30,8 +30,10 @@ async function flushMail() {
   });
   const from = process.env.MAIL_FROM || `Nelmora Portal <${process.env.SMTP_USER}>`;
   const results = [];
-  for (const m of msgs) {
-    try { await transport.sendMail({ from, ...m }); results.push({ to: m.to, ok: true }); }
+  for (const { fromName, ...m } of msgs) {
+    // fromName: show who it's from (e.g. "Amira via Nelmora Portal"); it is still sent by the portal's own account.
+    const sender = fromName ? `"${fromName.replace(/"/g, '')}" <${process.env.SMTP_USER}>` : from;
+    try { await transport.sendMail({ from: sender, ...m }); results.push({ to: m.to, ok: true }); }
     catch (e) { console.error('Email to', m.to, 'failed:', e.message); results.push({ to: m.to, ok: false, error: e.message }); }
   }
   return results;
@@ -76,4 +78,51 @@ function newJobMail({ to, name, design }) {
   return { to, subject: `Nelmora: New design job for ${name}`, text, html };
 }
 
-module.exports = { queueMail, clearMail, flushMail, configured, newJobMail };
+const STATUS = { todo: 'To do', doing: 'In progress', done: 'Done' };
+
+// Email to the owner when a designer updates a job (status, file link or note). Reply goes to the designer.
+function staffUpdateMail({ to, staffName, replyTo, design, before, changes }) {
+  const link = `${portalUrl()}/designs`;
+  const status = STATUS[design.status] || design.status;
+  const headline = changes.includes('status')
+    ? (design.status === 'done' ? `${staffName} finished a design` : design.status === 'doing' ? `${staffName} started a design` : `${staffName} moved a design back to To do`)
+    : changes.includes('file') ? `${staffName} added the file link` : `${staffName} left you a note`;
+  const subject = changes.includes('status')
+    ? `${staffName}: ${design.title} is now ${status}`
+    : changes.includes('file') ? `${staffName}: file link added for ${design.title}` : `${staffName}: note on ${design.title}`;
+  const rows = [
+    ['Job', design.title],
+    design.event_name && ['For event', design.event_name],
+    ['Status', changes.includes('status') ? `${STATUS[before.status] || before.status} → ${status}` : status],
+    ['Fee', 'RM ' + Number(design.fee || 0).toFixed(2)],
+    design.file_link && ['File', design.file_link],
+  ].filter(Boolean);
+  const text = [
+    `${headline}.`, '',
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...(design.staff_note ? ['', `Note from ${staffName}:`, design.staff_note] : []),
+    ...(design.status === 'done' ? ['', 'When you have paid her, click Pay on the Designs page.'] : []),
+    '', `Open in the portal: ${link}`, '', `Reply to this email to answer ${staffName}.`,
+  ].join('\n');
+  const html = `
+  <div style="font-family:Arial,Helvetica,sans-serif;background:#f6f2ef;padding:24px">
+    <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #ece3df">
+      <div style="background:#4f0f20;color:#fff;padding:22px 24px">
+        <div style="font-size:12px;letter-spacing:.18em;font-weight:bold;opacity:.8">NELMORA</div>
+        <div style="font-size:20px;font-weight:bold;margin-top:6px">${esc(headline)}</div>
+      </div>
+      <div style="padding:22px 24px;color:#2b1a1e;font-size:14px;line-height:1.5">
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          ${rows.map(([k, v]) => `<tr><td style="padding:6px 0;color:#8a777b;width:110px;vertical-align:top">${esc(k)}</td><td style="padding:6px 0;font-weight:bold;word-break:break-all">${k === 'File' ? `<a href="${esc(v)}" style="color:#6b1a2e">${esc(v)}</a>` : esc(v)}</td></tr>`).join('')}
+        </table>
+        ${design.staff_note ? `<div style="background:#faf4f5;border-radius:10px;padding:12px 14px;margin-top:14px;white-space:pre-wrap"><b>Note from ${esc(staffName)}</b><br>${esc(design.staff_note)}</div>` : ''}
+        ${design.status === 'done' ? `<p style="margin:14px 0 0">When you have paid her, click <b>Pay</b> on the Designs page.</p>` : ''}
+        <p style="margin:22px 0 6px"><a href="${esc(link)}" style="background:#6b1a2e;color:#fff;text-decoration:none;padding:11px 18px;border-radius:9px;display:inline-block;font-weight:bold">Open Designs</a></p>
+        <p style="color:#8a777b;font-size:12px;margin-top:18px">Reply to this email to answer ${esc(staffName)} directly.</p>
+      </div>
+    </div>
+  </div>`;
+  return { to, subject, text, html, replyTo, fromName: `${staffName} via Nelmora Portal` };
+}
+
+module.exports = { queueMail, clearMail, flushMail, configured, newJobMail, staffUpdateMail };

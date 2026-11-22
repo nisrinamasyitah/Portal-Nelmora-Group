@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { db, getSettings, restoreDatabase } = require('./db');
 const { compute, agentRate, r2 } = require('./calc');
-const { queueMail, flushMail, clearMail, configured: mailConfigured, newJobMail } = require('./mail');
+const { queueMail, flushMail, clearMail, configured: mailConfigured, newJobMail, staffUpdateMail } = require('./mail');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -180,6 +180,11 @@ app.put('/api/settings', wrap((req, res) => {
     default_commission: (v) => Number(v) || 0,
     design_fee_base: (v) => Math.max(0, Number(v) || 0),
     design_fee_pct: (v) => Math.max(0, Number(v) || 0),
+    owner_notify_email: (v) => {
+      const e = String(v || '').trim().toLowerCase();
+      if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw bad('Enter a valid notification email (or leave it blank)');
+      return e;
+    },
     agent_tiers: (v) => {
       if (!Array.isArray(v)) throw bad('agent_tiers must be a list');
       return v.map((t) => ({ min: Math.round(Number(t.min)), rate: Number(t.rate) })).filter((t) => t.min > 0 && t.rate >= 0);
@@ -553,6 +558,18 @@ function notifyAssignee(design) {
   queueMail(newJobMail({ to, name: u.name, design: { ...design, event_name: event?.name } }));
   return { sent: true, to };
 }
+function notifyOwner(staff, before, after) {
+  const changes = [];
+  if (after.status !== before.status) changes.push('status');
+  if ((after.file_link || '') !== (before.file_link || '') && after.file_link) changes.push('file');
+  if ((after.staff_note || '') !== (before.staff_note || '') && after.staff_note) changes.push('note');
+  if (!changes.length || !mailConfigured()) return;
+  const to = getSettings().owner_notify_email || 'nelmoragroup@gmail.com'; // always the Nelmora inbox, never a personal one
+  if (!to) return;
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(staff.id);
+  const event = after.event_id ? db.prepare('SELECT name FROM events WHERE id = ?').get(after.event_id) : null;
+  queueMail(staffUpdateMail({ to, staffName: u.name, replyTo: u.notify_email || u.email, design: { ...after, event_name: event?.name }, before, changes }));
+}
 // Owner: send the job email again (e.g. it went to spam, or the subject changed).
 app.post('/api/designs/:id/notify', wrap((req, res) => {
   ownerOnly(req);
@@ -572,6 +589,8 @@ app.put('/api/designs/:id', wrap((req, res) => {
   if (d.paid_on && cur.transaction_id) throw bad('This design is already paid through Cash flow.');
   if (cur.transaction_id && d.fee !== undefined && d.fee !== cur.fee) throw bad('This design is already paid. Undo the payment before changing the fee.');
   const row = update('designs', cur.id, d);
+  // Staff changed status / file link / note → email the owner ("Amira via Nelmora Portal", reply goes to Amira).
+  if (req.user.role !== 'owner') notifyOwner(req.user, cur, row);
   // Re-assigned to someone new → tell the new designer.
   const email = req.user.role === 'owner' && row.assignee_id && row.assignee_id !== cur.assignee_id ? notifyAssignee(row) : null;
   res.json({ ...row, email });
