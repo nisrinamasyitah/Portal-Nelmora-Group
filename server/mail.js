@@ -40,7 +40,7 @@ async function flushMail() {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date');
 
-// "NELMORA NEW JOB AMIRA !" email for a design job.
+// "Nelmora: New design job for Amira" email for a design job.
 function newJobMail({ to, name, design }) {
   const link = `${portalUrl()}/designs`;
   const rows = [
@@ -73,7 +73,7 @@ function newJobMail({ to, name, design }) {
       </div>
     </div>
   </div>`;
-  return { to, subject: `NELMORA NEW JOB ${String(name).toUpperCase()} !`, text, html };
+  return { to, subject: `Nelmora: New design job for ${name}`, text, html };
 }
 
 module.exports = { queueMail, clearMail, flushMail, configured, newJobMail };

@@ -512,7 +512,7 @@ app.post('/api/designs', wrap((req, res) => {
   const row = insert('designs', d);
   res.json({ ...row, email: notifyAssignee(row) });
 }));
-// Email the designer when an open job is assigned to her ("NELMORA NEW JOB AMIRA !").
+// Email the designer when an open job is assigned to her ("Nelmora: New design job for Amira").
 // The email goes out only after the change is saved. Returns what happened, for the owner's screen.
 function notifyAssignee(design) {
   if (!design.assignee_id || design.status === 'done') return null;
@@ -524,6 +524,17 @@ function notifyAssignee(design) {
   queueMail(newJobMail({ to, name: u.name, design: { ...design, event_name: event?.name } }));
   return { sent: true, to };
 }
+// Owner: send the job email again (e.g. it went to spam, or the subject changed).
+app.post('/api/designs/:id/notify', wrap((req, res) => {
+  ownerOnly(req);
+  const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
+  if (!cur) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (!cur.assignee_id) throw bad('Choose a designer for this job first.');
+  if (cur.status === 'done') throw bad('This job is already done.');
+  const email = notifyAssignee(cur);
+  if (!email) throw bad('This designer cannot receive emails (account locked or missing).');
+  res.json({ ...cur, email });
+}));
 app.put('/api/designs/:id', wrap((req, res) => {
   const cur = db.prepare('SELECT * FROM designs WHERE id = ?').get(req.params.id);
   if (!cur || (req.user.role !== 'owner' && cur.assignee_id !== req.user.id)) throw Object.assign(new Error('Not found'), { status: 404 });

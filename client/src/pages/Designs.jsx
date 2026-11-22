@@ -101,7 +101,7 @@ export default function Designs() {
       </PageHead>
       {emailNote && (
         <div className={emailNote.sent ? 'notice ok' : 'notice'}>
-          {emailNote.sent ? <>Email "NELMORA NEW JOB" sent to <b>{emailNote.to}</b> for "{emailNote.title}".</> : <>Job saved, but no email was sent: {emailNote.reason}</>}
+          {emailNote.sent ? <>Job email sent to <b>{emailNote.to}</b> for "{emailNote.title}".</> : <>Job saved, but no email was sent: {emailNote.reason}</>}
           <button className="link" style={{ marginLeft: 8 }} onClick={() => setEmailNote(null)}>Close</button>
         </div>
       )}
@@ -135,6 +135,7 @@ export default function Designs() {
                     <td className="num"><FeeText d={d} /></td>
                     <td className="nowrap"><PaidOn d={d} /></td>
                     <td className="right nowrap">
+                      {d.status !== 'done' && d.assignee_id && <button className="link" onClick={async () => { try { const r = await api(`/designs/${d.id}/notify`, { method: 'POST' }); setEmailNote({ ...r.email, title: d.title }); } catch (e) { setEmailNote({ sent: false, reason: e.message, title: d.title }); } }}>Email again</button>}
                       {d.status === 'done' && !d.paid && <button className="link" onClick={() => setModal({ t: 'pay', d })}>Pay</button>}
                       {d.paid && <button className="link" onClick={async () => (await confirmDelete(d.paid_outside ? 'Mark this design as not paid?' : 'Undo this payment? The "Design" entry is removed from Cash flow.', () => api(`/designs/${d.id}/unpay`, { method: 'POST' }))) && designs.reload()}>Undo pay</button>}
                       <button className="link" onClick={() => setModal({ t: 'edit', d })}>Edit</button>
