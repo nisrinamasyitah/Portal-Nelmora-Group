@@ -111,9 +111,15 @@ export default async (req, context) => {
   if (req.method === 'POST' && /\/api\/login$/.test(new URL(req.url).pathname)) {
     const ip = clientIp(req, context);
     return loginGuard(ip, async () => {
-      const { saved } = await load();
+      const { blobs, saved } = await load();
       useDatabase(openFromBuffer(saved ? Buffer.from(saved.data) : null));
       const res = await runPortal(req, ip);
+      // A staff sign-in records "last sign-in" for the owner's Team page. Save it, but never let
+      // a save problem block the sign-in itself (it is only an activity note).
+      if (res.status === 200 && res.headers.get('x-db-changed') && saved?.etag) {
+        try { await blobs.set(KEY, toArrayBuffer(db.serialize()), { onlyIfMatch: saved.etag }); } catch (e) { console.warn('last sign-in not saved:', e.message); }
+      }
+      res.headers.delete('x-db-changed');
       return new Response(res.body, { status: res.status, headers: res.headers });
     });
   }

@@ -13,6 +13,7 @@ import Agents from './pages/Agents.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 import Designs from './pages/Designs.jsx';
+import Team from './pages/Team.jsx';
 import { MyAccount, MyDesigns, StaffDashboard, StaffEvents, StaffStock } from './pages/StaffPortal.jsx';
 
 function Login({ onDone, askEmail, notice }) {
@@ -111,6 +112,7 @@ const NAV = [
     ['/designs', 'Designs', 'design'],
   ]],
   ['Account', [
+    ['/team', 'Team & access', 'user'],
     ['/settings', 'Settings', 'settings'],
   ]],
 ];
@@ -171,7 +173,7 @@ function Sidebar({ nav, who, onLogout, sub = 'Business portal' }) {
   );
 }
 
-function Shell({ onLogout, who }) {
+function Shell({ onLogout, who, me }) {
   return (
     <div className="app">
       <aside className="side">
@@ -203,6 +205,7 @@ function Shell({ onLogout, who }) {
           <Route path="/sales" element={<Sales />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/designs" element={<Designs />} />
+          <Route path="/team" element={<Team me={me} />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings onLogout={onLogout} />} />
           <Route path="*" element={<p className="muted">Page not found.</p>} />
@@ -264,5 +267,5 @@ export default function App() {
   if (!me) return <p className="muted" style={{ padding: 20 }}>Loading…</p>;
   const logout = auth.data?.required ? () => { setToken(''); setLoggedIn(false); } : null;
   if (me.role !== 'owner') return <StaffShell me={me} onLogout={logout} />;
-  return <Shell onLogout={logout} who={me.name} />;
+  return <Shell onLogout={logout} who={me.name} me={me} />;
 }

@@ -77,7 +77,13 @@ app.post('/api/login', (req, res) => {
   if ((!EMAIL || safeEq(email, EMAIL)) && safeEq(pw, PASSWORD)) { failures.delete(ip); return res.json({ token: makeToken(0) }); }
   // Staff: their own account (checked even when the email is unknown, so timing gives nothing away)
   const user = email ? db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(email) : null;
-  if (checkPassword(pw, user?.pw_hash) && user) { failures.delete(ip); return res.json({ token: makeToken(user.id) }); }
+  if (checkPassword(pw, user?.pw_hash) && user) {
+    failures.delete(ip);
+    // Remember the sign-in time (shown to the owner on the Team page). X-DB-Changed tells Netlify to save it.
+    db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
+    res.setHeader('X-DB-Changed', '1');
+    return res.json({ token: makeToken(user.id) });
+  }
   f.n += 1;
   if (f.n >= 5) { f.until = Date.now() + 15 * 60_000; f.n = 0; }
   failures.set(ip, f);
@@ -419,14 +425,30 @@ app.get('/api/backup', wrap((_req, res) => {
 }));
 
 // ---------------------------------------------------------------- staff accounts (owner only)
-const userOut = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created: u.created, notify_email: u.notify_email || '' });
+const userOut = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, created: u.created, notify_email: u.notify_email || '', last_login: u.last_login || null, frozen_at: u.frozen_at || null });
 const checkNewPassword = (pw) => { if (String(pw || '').length < 8) throw bad('Password must be at least 8 characters'); };
 const cleanNotify = (d) => {
   if (d.notify_email === undefined) return;
   d.notify_email = d.notify_email.toLowerCase();
   if (d.notify_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.notify_email)) throw bad('Enter a valid notification email (or leave it blank)');
 };
-app.get('/api/users', wrap((_req, res) => res.json(db.prepare('SELECT * FROM users ORDER BY active DESC, name').all().map(userOut))));
+// Staff list for the owner's Team page: account details plus their design work and earnings.
+app.get('/api/users', wrap((_req, res) => {
+  const stats = db.prepare(`
+    SELECT d.assignee_id AS id,
+      COUNT(*) AS designs,
+      SUM(d.status != 'done') AS open_jobs,
+      SUM(d.status = 'done') AS done_jobs,
+      SUM(CASE WHEN d.transaction_id IS NOT NULL OR d.paid_on IS NOT NULL THEN d.fee ELSE 0 END) AS paid,
+      SUM(CASE WHEN d.status = 'done' AND d.transaction_id IS NULL AND d.paid_on IS NULL THEN d.fee ELSE 0 END) AS waiting,
+      MAX(COALESCE(d.done_date, d.created)) AS last_job
+    FROM designs d WHERE d.assignee_id IS NOT NULL GROUP BY d.assignee_id`).all();
+  const byId = new Map(stats.map((s) => [s.id, s]));
+  res.json(db.prepare('SELECT * FROM users ORDER BY active DESC, name').all().map((u) => {
+    const s = byId.get(u.id) || {};
+    return { ...userOut(u), designs: s.designs || 0, open_jobs: s.open_jobs || 0, done_jobs: s.done_jobs || 0, paid: r2(s.paid || 0), waiting: r2(s.waiting || 0), last_job: s.last_job || null };
+  }));
+}));
 app.post('/api/users', wrap((req, res) => {
   ownerOnly(req);
   const d = pick(req.body, { name: 'text', email: 'text', notify_email: 'text' }); need(d, ['name', 'email']);
@@ -448,6 +470,11 @@ app.put('/api/users/:id', wrap((req, res) => {
     if (EMAIL && d.email === EMAIL) throw bad('That is the owner email. Use a different email for staff.');
   }
   if (req.body.password) { checkNewPassword(req.body.password); d.pw_hash = hashPassword(req.body.password); }
+  // Freeze / unfreeze: a frozen account is signed out at once (checked on every request) and gets no job emails.
+  if (d.active !== undefined) {
+    const cur = db.prepare('SELECT active FROM users WHERE id = ?').get(req.params.id);
+    if (cur && !!cur.active !== !!d.active) d.frozen_at = d.active ? null : new Date().toISOString();
+  }
   res.json(userOut(update('users', req.params.id, d)));
 }));
 

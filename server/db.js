@@ -173,6 +173,9 @@ function prepare(d) {
   // Migration: where a staff member gets job notifications (can differ from her sign-in email).
   const userCols = new Set(d.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
   if (!userCols.has('notify_email')) d.exec("ALTER TABLE users ADD COLUMN notify_email TEXT NOT NULL DEFAULT ''");
+  // Migration: staff account control (last sign-in, when the owner froze the account).
+  if (!userCols.has('last_login')) d.exec('ALTER TABLE users ADD COLUMN last_login TEXT');
+  if (!userCols.has('frozen_at')) d.exec('ALTER TABLE users ADD COLUMN frozen_at TEXT');
 
   const has = d.prepare('SELECT 1 FROM settings WHERE key = ?');
   const put = d.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
