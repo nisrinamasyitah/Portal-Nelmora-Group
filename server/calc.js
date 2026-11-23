@@ -279,8 +279,25 @@ function computeFresh() {
       });
     }
   }
+  // A restock entered on a costing sheet is ONE payment, e.g.
+  // "0007 restock: 15 × 30ml (Strawberry Kiss 5, Aura 5, Victus Cologne 5)" RM240.
+  const restockGroups = new Map();
   for (const b of batches) {
-    if (!b.cash_paid) continue;
+    if (!b.cash_paid || !b.group_id) continue;
+    const g = restockGroups.get(b.group_id) || { date: b.date, amount: 0, qty: 0, scents: [], code: (b.note || '').match(/^(\d{4})/)?.[1], size: productById.get(b.product_id)?.line, supplier: b.supplier };
+    g.amount += b.qty * b.unit_cost; g.qty += b.qty;
+    g.scents.push(`${(productById.get(b.product_id)?.name || '?').replace(/ \((10|30)ml\)$/, '')} ${b.qty}`);
+    restockGroups.set(b.group_id, g);
+  }
+  for (const [id, g] of restockGroups) {
+    push({
+      key: `restock-${id}`, date: g.date, type: 'out', category: 'Stock purchase', source: 'Stock',
+      amount: r2(g.amount),
+      description: `${g.code ? g.code + ' ' : ''}restock: ${g.qty} × ${g.size || ''} (${g.scents.join(', ')})${g.supplier ? ' from ' + g.supplier : ''}`,
+    });
+  }
+  for (const b of batches) {
+    if (!b.cash_paid || b.group_id) continue;
     push({
       key: `batch-${b.id}`, date: b.date, type: 'out', category: 'Stock purchase', source: 'Stock',
       amount: r2(b.qty * b.unit_cost),
